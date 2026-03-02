@@ -1,0 +1,83 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #0d2530;
+  color: #e8dcc8;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #1a0f0a;
+}
+::-webkit-scrollbar-thumb {
+  background: #3d2b1f;
+  border-radius: 4px;
+}
+
+.font-pirate {
+  font-family: 'Pirata One', cursive;
+}
+
+/* Board canvas */
+.game-board-canvas {
+  cursor: pointer;
+  border: 3px solid #3d2b1f;
+  border-radius: 6px;
+  box-shadow:
+    0 0 0 1px rgba(196, 162, 101, 0.15),
+    0 4px 24px rgba(0, 0, 0, 0.5),
+    inset 0 0 20px rgba(0, 0, 0, 0.1);
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translate(-50%, -20px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+@keyframes pulse-gold {
+  0%, 100% { text-shadow: 0 0 4px rgba(255, 215, 0, 0.4); }
+  50% { text-shadow: 0 0 12px rgba(255, 215, 0, 0.8); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.animate-slide-down {
+  animation: slideDown 0.3s ease-out;
+}
+
+.animate-pulse-gold {
+  animation: pulse-gold 2s infinite;
+}
+
+/* Player color indicators */
+.player-color-red { color: #ef4444; }
+.player-color-blue { color: #3b82f6; }
+.player-color-green { color: #22c55e; }
+.player-color-yellow { color: #eab308; }
+.player-color-purple { color: #a855f7; }
+.player-color-orange { color: #f97316; }
+
+.bg-player-red { background: #ef4444; }
+.bg-player-blue { background: #3b82f6; }
+.bg-player-green { background: #22c55e; }
+.bg-player-yellow { background: #eab308; }
+.bg-player-purple { background: #a855f7; }
+.bg-player-orange { background: #f97316; }

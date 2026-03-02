@@ -1,0 +1,516 @@
+import { useState } from 'react';
+
+const BUILD_COSTS = {
+  ship: { wood: 2, iron: 1, rum: 0, gold: 2 },
+  cannon: { wood: 0, iron: 2, rum: 1, gold: 1 },
+  mast: { wood: 1, iron: 0, rum: 2, gold: 0 },
+  lifePeg: { wood: 1, iron: 1, rum: 1, gold: 1 },
+  plunderPoint: { wood: 0, iron: 0, rum: 0, gold: 5 },
+};
+
+const RESOURCE_META = {
+  wood: { label: 'Wood', color: '#8B5E3C', bg: 'rgba(139,94,60,0.15)', border: 'rgba(139,94,60,0.3)' },
+  iron: { label: 'Iron', color: '#9CA3AF', bg: 'rgba(156,163,175,0.15)', border: 'rgba(156,163,175,0.3)' },
+  rum: { label: 'Rum', color: '#C2410C', bg: 'rgba(194,65,12,0.15)', border: 'rgba(194,65,12,0.3)' },
+  gold: { label: 'Gold', color: '#EAB308', bg: 'rgba(234,179,8,0.15)', border: 'rgba(234,179,8,0.3)' },
+};
+
+const EMPTY_RESOURCES = { wood: 0, iron: 0, rum: 0, gold: 0 };
+
+export default function ActionPanel({
+  gameState, myPlayer, isMyTurn, turnPhase, phase,
+  selectedShip, onDrawResources, onRollDie, onBuild, onEndTurn, emit,
+  pendingTreaty,
+}) {
+  const [showTrade, setShowTrade] = useState(false);
+  const [tradeTarget, setTradeTarget] = useState('');
+  const [tradeOffer, setTradeOffer] = useState({ ...EMPTY_RESOURCES });
+  const [tradeRequest, setTradeRequest] = useState({ ...EMPTY_RESOURCES });
+  const [showBuild, setShowBuild] = useState(false);
+  const [showMerchant, setShowMerchant] = useState(false);
+  const [merchantReceive, setMerchantReceive] = useState('wood');
+  const [merchantGive, setMerchantGive] = useState({ ...EMPTY_RESOURCES });
+  const [showTreaty, setShowTreaty] = useState(false);
+  const [treatyTarget, setTreatyTarget] = useState('');
+  const [treatyOffer, setTreatyOffer] = useState({ ...EMPTY_RESOURCES });
+  const [treasureTargetId, setTreasureTargetId] = useState('');
+  const [treasureDiscards, setTreasureDiscards] = useState({ ...EMPTY_RESOURCES });
+
+  if (!myPlayer) return null;
+
+  const resources = myPlayer.resources;
+
+  function canAfford(cost) {
+    return Object.entries(cost).every(([r, amt]) => (resources[r] || 0) >= amt);
+  }
+
+  async function submitTrade() {
+    if (!tradeTarget) return;
+    await emit('propose-trade', { toPlayerId: tradeTarget, offer: tradeOffer, request: tradeRequest });
+    setShowTrade(false);
+    setTradeOffer({ ...EMPTY_RESOURCES });
+    setTradeRequest({ ...EMPTY_RESOURCES });
+    setTradeTarget('');
+  }
+
+  const merchantGiveTotal = Object.values(merchantGive).reduce((s, v) => s + v, 0);
+
+  async function submitMerchantTrade() {
+    if (merchantGiveTotal !== 2) return;
+    await emit('merchant-trade', { give: merchantGive, receive: merchantReceive });
+    setShowMerchant(false);
+    setMerchantGive({ ...EMPTY_RESOURCES });
+    setMerchantReceive('wood');
+  }
+
+  async function submitTreaty() {
+    if (!treatyTarget) return;
+    await emit('propose-treaty', { targetId: treatyTarget, offer: treatyOffer });
+    setShowTreaty(false);
+    setTreatyOffer({ ...EMPTY_RESOURCES });
+    setTreatyTarget('');
+  }
+
+  async function respondTreaty(accepted) {
+    await emit('respond-treaty', { accepted, proposerId: pendingTreaty.proposerId, offer: pendingTreaty.offer });
+  }
+
+  const pendingTreasure = gameState?.pendingTreasure;
+  const isTreasureMine = pendingTreasure && pendingTreasure.playerId === myPlayer.id;
+
+  async function resolveTreasureSteal() {
+    if (!treasureTargetId) return;
+    await emit('resolve-treasure', { targetId: treasureTargetId });
+    setTreasureTargetId('');
+  }
+
+  async function resolveTreasureDiscard() {
+    const total = Object.values(treasureDiscards).reduce((s, v) => s + v, 0);
+    if (total !== pendingTreasure.amount) return;
+    await emit('resolve-treasure', { discards: treasureDiscards });
+    setTreasureDiscards({ ...EMPTY_RESOURCES });
+  }
+
+  async function handleShiplessRoll() {
+    await emit('shipless-roll', {});
+  }
+
+  const tradeablePlayers = Object.values(gameState.players).filter(
+    p => p.id !== myPlayer.id && gameState.tradeEligible?.[p.id]
+  );
+  const otherPlayers = Object.values(gameState.players).filter(p => p.id !== myPlayer.id);
+  const showBuildSection = isMyTurn && phase === 'gameplay' &&
+    (turnPhase === 'draw_resources' || turnPhase === 'roll_for_move' || turnPhase === 'perform_actions');
+  const isShipless = (myPlayer.ships?.length || 0) === 0;
+  const showShiplessRoll = isShipless && gameState.settings?.shiplessMode === 'rulebook' && isMyTurn && phase === 'gameplay';
+
+  return (
+    <div className="flex-1 overflow-y-auto p-3 space-y-3">
+      {/* ══════ Pending Treaty Modal ══════ */}
+      {pendingTreaty && (
+        <div className="bg-pirate-dark border border-pirate-gold rounded-lg p-3 space-y-2">
+          <h3 className="text-sm text-pirate-gold font-bold">Treaty Proposal</h3>
+          <p className="text-xs text-pirate-tan">
+            <strong className="text-white">{pendingTreaty.proposerName}</strong> offers a treaty:
+          </p>
+          <div className="grid grid-cols-4 gap-1">
+            {Object.entries(pendingTreaty.offer)
+              .filter(([, v]) => v > 0)
+              .map(([r, v]) => (
+                <div key={r} className="text-center">
+                  <div className="text-xs font-bold" style={{ color: RESOURCE_META[r]?.color }}>{RESOURCE_META[r]?.label}</div>
+                  <div className="text-sm font-bold text-green-400">+{v}</div>
+                </div>
+              ))}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => respondTreaty(true)}
+              className="flex-1 bg-green-700 hover:bg-green-600 text-white py-1.5 rounded text-xs transition">
+              Accept
+            </button>
+            <button onClick={() => respondTreaty(false)}
+              className="flex-1 bg-red-700 hover:bg-red-600 text-white py-1.5 rounded text-xs transition">
+              Decline
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ══════ Pending Treasure Resolution ══════ */}
+      {isTreasureMine && pendingTreasure.type === 'steal' && (
+        <div className="bg-pirate-dark border border-pirate-gold rounded-lg p-3 space-y-2">
+          <h3 className="text-sm text-pirate-gold font-bold">Treasure: Steal</h3>
+          <p className="text-xs text-pirate-tan">Choose a player to steal from:</p>
+          <select value={treasureTargetId} onChange={(e) => setTreasureTargetId(e.target.value)}
+            className="w-full bg-pirate-dark border border-pirate-tan/30 rounded px-2 py-1 text-xs text-white">
+            <option value="">Select player...</option>
+            {otherPlayers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <button onClick={resolveTreasureSteal} disabled={!treasureTargetId}
+            className="w-full bg-pirate-gold text-pirate-dark py-1.5 rounded text-xs font-bold
+                       hover:bg-yellow-400 disabled:opacity-40 disabled:cursor-not-allowed transition">
+            Steal
+          </button>
+        </div>
+      )}
+
+      {isTreasureMine && pendingTreasure.type === 'storm_discard' && (
+        <div className="bg-pirate-dark border border-pirate-gold rounded-lg p-3 space-y-2">
+          <h3 className="text-sm text-pirate-gold font-bold">Storm: Discard Resources</h3>
+          <p className="text-xs text-pirate-tan">
+            Discard {pendingTreasure.amount} resource{pendingTreasure.amount !== 1 ? 's' : ''}:
+          </p>
+          <div className="grid grid-cols-4 gap-1">
+            {Object.keys(EMPTY_RESOURCES).map(r => (
+              <div key={r} className="text-center">
+                <div className="text-[10px] font-bold" style={{ color: RESOURCE_META[r]?.color }}>{RESOURCE_META[r]?.label}</div>
+                <input type="number" min="0" max={resources[r] || 0} value={treasureDiscards[r]}
+                  onChange={(e) => setTreasureDiscards(prev => ({ ...prev, [r]: parseInt(e.target.value) || 0 }))}
+                  className="w-full bg-pirate-dark border border-pirate-tan/20 rounded text-center text-xs py-0.5 text-white" />
+              </div>
+            ))}
+          </div>
+          <div className="text-[10px] text-pirate-tan/60 text-right">
+            Selected: {Object.values(treasureDiscards).reduce((s, v) => s + v, 0)} / {pendingTreasure.amount}
+          </div>
+          <button onClick={resolveTreasureDiscard}
+            disabled={Object.values(treasureDiscards).reduce((s, v) => s + v, 0) !== pendingTreasure.amount}
+            className="w-full bg-pirate-gold text-pirate-dark py-1.5 rounded text-xs font-bold
+                       hover:bg-yellow-400 disabled:opacity-40 disabled:cursor-not-allowed transition">
+            Discard
+          </button>
+        </div>
+      )}
+
+      {/* ══════ Resources ══════ */}
+      <div className="rounded-lg overflow-hidden">
+        <div className="px-3 py-1.5 bg-pirate-dark/60 border-b border-pirate-tan/10">
+          <h3 className="text-[11px] text-pirate-tan/60 uppercase tracking-wider font-semibold">Resources</h3>
+        </div>
+        <div className="grid grid-cols-4 gap-1.5 p-2">
+          {Object.entries(resources).map(([type, count]) => {
+            const meta = RESOURCE_META[type];
+            return (
+              <div key={type} className="text-center rounded-lg p-2 border"
+                   style={{ background: meta.bg, borderColor: meta.border }}>
+                <div className="text-lg font-bold text-white">{count}</div>
+                <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: meta.color }}>{meta.label}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ══════ Fleet ══════ */}
+      <div className="rounded-lg overflow-hidden">
+        <div className="px-3 py-1.5 bg-pirate-dark/60 border-b border-pirate-tan/10">
+          <h3 className="text-[11px] text-pirate-tan/60 uppercase tracking-wider font-semibold">
+            Fleet ({myPlayer.ships?.length || 0}/3)
+          </h3>
+        </div>
+        <div className="p-2 space-y-1.5">
+          {isShipless && (
+            <p className="text-xs text-red-400 px-1">No ships! You're shipless.</p>
+          )}
+          {myPlayer.ships?.map((ship, i) => (
+            <div key={ship.id} className="flex items-center justify-between bg-pirate-dark/40 rounded px-3 py-2">
+              <span className="text-xs text-white font-medium">Ship {i + 1}</span>
+              <div className="flex items-center gap-3">
+                {/* Life pegs */}
+                <div className="flex items-center gap-0.5" title={`Lives: ${ship.lifePegs}/3`}>
+                  {[0, 1, 2].map(n => (
+                    <span key={n} className="inline-block w-2.5 h-2.5 rounded-full border"
+                      style={{
+                        backgroundColor: n < ship.lifePegs ? '#ef4444' : 'transparent',
+                        borderColor: n < ship.lifePegs ? '#dc2626' : 'rgba(239,68,68,0.25)',
+                      }} />
+                  ))}
+                </div>
+                {/* Cannon pegs */}
+                <div className="flex items-center gap-0.5" title={`Cannons: ${ship.cannons}/2`}>
+                  {[0, 1].map(n => (
+                    <span key={n} className="inline-block w-2.5 h-2.5 rounded-full border"
+                      style={{
+                        backgroundColor: n < ship.cannons ? '#6b7280' : 'transparent',
+                        borderColor: n < ship.cannons ? '#4b5563' : 'rgba(107,114,128,0.25)',
+                      }} />
+                  ))}
+                </div>
+                {/* Mast pegs */}
+                <div className="flex items-center gap-0.5" title={`Masts: ${ship.masts}/2`}>
+                  {[0, 1].map(n => (
+                    <span key={n} className="inline-block w-2.5 h-2.5 rounded-full border"
+                      style={{
+                        backgroundColor: n < ship.masts ? '#06b6d4' : 'transparent',
+                        borderColor: n < ship.masts ? '#0891b2' : 'rgba(6,182,212,0.25)',
+                      }} />
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ══════ Plunder Points ══════ */}
+      <div className="rounded-lg overflow-hidden">
+        <div className="px-3 py-2 bg-pirate-dark/60 flex items-center justify-between">
+          <span className="text-[11px] text-pirate-tan/60 uppercase tracking-wider font-semibold">Plunder Points</span>
+          <span className="text-xl font-bold font-pirate text-pirate-gold">
+            {myPlayer.plunderPoints}/{gameState.settings?.ppToWin || 10}
+          </span>
+        </div>
+        <div className="px-3 pb-2 pt-1 bg-pirate-dark/60">
+          <div className="w-full h-2 rounded-full bg-pirate-dark/80 overflow-hidden">
+            <div className="h-full rounded-full bg-pirate-gold transition-all duration-500"
+                 style={{ width: `${Math.min(100, (myPlayer.plunderPoints / (gameState.settings?.ppToWin || 10)) * 100)}%` }} />
+          </div>
+        </div>
+      </div>
+
+      {/* ══════ Shipless Roll ══════ */}
+      {showShiplessRoll && (
+        <button onClick={handleShiplessRoll}
+          className="w-full bg-purple-700 hover:bg-purple-600 text-white py-2 rounded text-sm transition">
+          Roll for Ship
+        </button>
+      )}
+
+      {/* ══════ Turn Actions ══════ */}
+      {isMyTurn && phase === 'gameplay' && (
+        <div className="space-y-2">
+          <h3 className="text-xs text-pirate-gold font-bold uppercase tracking-wider">Your Turn</h3>
+
+          {turnPhase === 'draw_resources' && (
+            <button onClick={onDrawResources}
+              className="w-full bg-green-700 hover:bg-green-600 text-white py-2 rounded text-sm transition">
+              Draw Resources
+            </button>
+          )}
+
+          {turnPhase === 'roll_for_move' && (
+            <button onClick={onRollDie}
+              className="w-full bg-blue-700 hover:bg-blue-600 text-white py-2 rounded text-sm transition">
+              Roll Sailing Die
+            </button>
+          )}
+
+          {turnPhase === 'perform_actions' && (
+            <div className="text-xs text-pirate-tan bg-pirate-dark/40 rounded px-2 py-1.5">
+              Moves: <span className="text-white font-bold">{gameState.movePointsRemaining}</span>
+              {selectedShip && ' \u2022 Ship selected \u2014 click to move'}
+            </div>
+          )}
+
+          {/* Build */}
+          {showBuildSection && (
+            <>
+              <button onClick={() => setShowBuild(!showBuild)}
+                className="w-full bg-pirate-brown border border-pirate-tan/30 text-pirate-tan
+                           py-1.5 rounded text-sm hover:border-pirate-gold transition">
+                Build {showBuild ? '\u25B2' : '\u25BC'}
+              </button>
+
+              {showBuild && (
+                <div className="space-y-1 pl-2">
+                  {Object.entries(BUILD_COSTS).map(([type, cost]) => (
+                    <button key={type}
+                      onClick={() => {
+                        if (type === 'cannon' || type === 'mast' || type === 'lifePeg') {
+                          if (selectedShip) onBuild(type, selectedShip.id);
+                          else alert('Select a ship on the board first!');
+                        } else {
+                          onBuild(type);
+                        }
+                      }}
+                      disabled={!canAfford(cost)}
+                      className="w-full text-left bg-pirate-dark/50 border border-pirate-tan/10 rounded px-3 py-1.5
+                                 text-xs hover:border-pirate-tan/30 transition disabled:opacity-40 disabled:cursor-not-allowed
+                                 flex items-center justify-between">
+                      <span className="text-white capitalize font-medium">{type === 'lifePeg' ? 'Life Peg' : type === 'plunderPoint' ? 'Plunder Point' : type}</span>
+                      <span className="flex items-center gap-1.5">
+                        {Object.entries(cost).filter(([, v]) => v > 0).map(([r, v]) => (
+                          <span key={r} className="flex items-center gap-0.5">
+                            <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: RESOURCE_META[r]?.color }} />
+                            <span className="text-pirate-tan/70">{v}</span>
+                          </span>
+                        ))}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Trade */}
+          {turnPhase === 'perform_actions' && (
+            <>
+              <button onClick={() => setShowTrade(!showTrade)}
+                className="w-full bg-pirate-brown border border-pirate-tan/30 text-pirate-tan
+                           py-1.5 rounded text-sm hover:border-pirate-gold transition">
+                Trade {showTrade ? '\u25B2' : '\u25BC'}
+              </button>
+
+              {showTrade && (
+                <div className="bg-pirate-dark/50 rounded p-2 space-y-2">
+                  <select value={tradeTarget} onChange={(e) => setTradeTarget(e.target.value)}
+                    className="w-full bg-pirate-dark border border-pirate-tan/30 rounded px-2 py-1 text-xs text-white">
+                    <option value="">Select player...</option>
+                    {tradeablePlayers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+
+                  {tradeablePlayers.length === 0 && (
+                    <p className="text-[10px] text-red-400">No players are close enough to trade with.</p>
+                  )}
+
+                  <div className="text-[10px] text-green-400">You give:</div>
+                  <div className="grid grid-cols-4 gap-1">
+                    {Object.keys(tradeOffer).map(r => (
+                      <div key={r} className="text-center">
+                        <div className="text-[10px] font-bold" style={{ color: RESOURCE_META[r]?.color }}>{RESOURCE_META[r]?.label}</div>
+                        <input type="number" min="0" max={resources[r]} value={tradeOffer[r]}
+                          onChange={(e) => setTradeOffer(prev => ({ ...prev, [r]: parseInt(e.target.value) || 0 }))}
+                          className="w-full bg-pirate-dark border border-pirate-tan/20 rounded text-center text-xs py-0.5 text-white" />
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="text-[10px] text-red-400">You want:</div>
+                  <div className="grid grid-cols-4 gap-1">
+                    {Object.keys(tradeRequest).map(r => (
+                      <div key={r} className="text-center">
+                        <div className="text-[10px] font-bold" style={{ color: RESOURCE_META[r]?.color }}>{RESOURCE_META[r]?.label}</div>
+                        <input type="number" min="0" value={tradeRequest[r]}
+                          onChange={(e) => setTradeRequest(prev => ({ ...prev, [r]: parseInt(e.target.value) || 0 }))}
+                          className="w-full bg-pirate-dark border border-pirate-tan/20 rounded text-center text-xs py-0.5 text-white" />
+                      </div>
+                    ))}
+                  </div>
+
+                  <button onClick={submitTrade} disabled={!tradeTarget}
+                    className="w-full bg-green-700 text-white py-1 rounded text-xs hover:bg-green-600 disabled:opacity-40">
+                    Propose Trade
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Merchant Trade */}
+          {turnPhase === 'perform_actions' && gameState.atMerchant && (
+            <>
+              <button onClick={() => setShowMerchant(!showMerchant)}
+                className="w-full bg-pirate-brown border border-yellow-600/50 text-pirate-gold
+                           py-1.5 rounded text-sm hover:border-yellow-500 transition">
+                Merchant Trade {showMerchant ? '\u25B2' : '\u25BC'}
+              </button>
+
+              {showMerchant && (
+                <div className="bg-pirate-dark/50 rounded p-2 space-y-2">
+                  <p className="text-[10px] text-pirate-tan/70">Give 2 resources, receive 1 of your choice.</p>
+
+                  <div className="text-[10px] text-green-400">You receive:</div>
+                  <select value={merchantReceive} onChange={(e) => setMerchantReceive(e.target.value)}
+                    className="w-full bg-pirate-dark border border-pirate-tan/30 rounded px-2 py-1 text-xs text-white">
+                    {Object.entries(RESOURCE_META).map(([r, meta]) => (
+                      <option key={r} value={r}>{meta.label}</option>
+                    ))}
+                  </select>
+
+                  <div className="text-[10px] text-red-400">You give (must total 2):</div>
+                  <div className="grid grid-cols-4 gap-1">
+                    {Object.keys(EMPTY_RESOURCES).map(r => (
+                      <div key={r} className="text-center">
+                        <div className="text-[10px] font-bold" style={{ color: RESOURCE_META[r]?.color }}>{RESOURCE_META[r]?.label}</div>
+                        <input type="number" min="0" max={resources[r] || 0} value={merchantGive[r]}
+                          onChange={(e) => setMerchantGive(prev => ({ ...prev, [r]: parseInt(e.target.value) || 0 }))}
+                          className="w-full bg-pirate-dark border border-pirate-tan/20 rounded text-center text-xs py-0.5 text-white" />
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="text-[10px] text-pirate-tan/60 text-right">
+                    Selected: {merchantGiveTotal} / 2
+                  </div>
+
+                  <button onClick={submitMerchantTrade} disabled={merchantGiveTotal !== 2}
+                    className="w-full bg-yellow-600 text-white py-1 rounded text-xs font-bold
+                               hover:bg-yellow-500 disabled:opacity-40 disabled:cursor-not-allowed transition">
+                    Trade with Merchant
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Treaty */}
+          {turnPhase === 'perform_actions' && (
+            <>
+              <button onClick={() => setShowTreaty(!showTreaty)}
+                className="w-full bg-pirate-brown border border-pirate-tan/30 text-pirate-tan
+                           py-1.5 rounded text-sm hover:border-pirate-gold transition">
+                Treaty {showTreaty ? '\u25B2' : '\u25BC'}
+              </button>
+
+              {showTreaty && (
+                <div className="bg-pirate-dark/50 rounded p-2 space-y-2">
+                  <p className="text-[10px] text-pirate-tan/70">Propose a treaty (bribe) to another player.</p>
+
+                  <select value={treatyTarget} onChange={(e) => setTreatyTarget(e.target.value)}
+                    className="w-full bg-pirate-dark border border-pirate-tan/30 rounded px-2 py-1 text-xs text-white">
+                    <option value="">Select player...</option>
+                    {otherPlayers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+
+                  <div className="text-[10px] text-green-400">You offer:</div>
+                  <div className="grid grid-cols-4 gap-1">
+                    {Object.keys(EMPTY_RESOURCES).map(r => (
+                      <div key={r} className="text-center">
+                        <div className="text-[10px] font-bold" style={{ color: RESOURCE_META[r]?.color }}>{RESOURCE_META[r]?.label}</div>
+                        <input type="number" min="0" max={resources[r] || 0} value={treatyOffer[r]}
+                          onChange={(e) => setTreatyOffer(prev => ({ ...prev, [r]: parseInt(e.target.value) || 0 }))}
+                          className="w-full bg-pirate-dark border border-pirate-tan/20 rounded text-center text-xs py-0.5 text-white" />
+                      </div>
+                    ))}
+                  </div>
+
+                  <button onClick={submitTreaty} disabled={!treatyTarget}
+                    className="w-full bg-indigo-700 text-white py-1 rounded text-xs font-bold
+                               hover:bg-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed transition">
+                    Propose Treaty
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* End Turn */}
+          {turnPhase === 'perform_actions' && (
+            <button onClick={onEndTurn}
+              className="w-full bg-red-800 hover:bg-red-700 text-white py-2 rounded text-sm transition mt-2">
+              End Turn
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ══════ Not your turn ══════ */}
+      {!isMyTurn && phase === 'gameplay' && (
+        <div className="text-center text-pirate-tan/50 text-sm py-4">
+          Waiting for {gameState.players[gameState.currentPlayerId]?.name}...
+        </div>
+      )}
+
+      {/* ══════ Game Over ══════ */}
+      {phase === 'game_over' && (
+        <div className="text-center py-4">
+          <h2 className="font-pirate text-2xl text-pirate-gold mb-2">Game Over!</h2>
+          <p className="text-white">
+            {gameState.players[gameState.winner]?.name} wins!
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
