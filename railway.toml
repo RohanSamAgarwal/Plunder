@@ -1,13 +1,12 @@
 [build]
+  builder = "NIXPACKS"
   buildCommand = "npm install && npm run build"
+  nixpacksVersion = "1.29.1"
+
+[build.nixpacks]
+  nixPkgs = ["nodejs_20"]
 
 [deploy]
   startCommand = "npm run start"
   healthcheckPath = "/health"
   healthcheckTimeout = 30
-
-[build.builder]
-  name = "nixpacks"
-
-[build.nixpacks]
-  nixPkgs = ["nodejs_20"]
