@@ -3,6 +3,7 @@ import { v4 as uuid } from 'uuid';
 import {
   GAME_PHASES, TURN_PHASES, INITIAL_LIFE_PEGS, WIN_POINTS,
   STORM_SIZE, BUILD_COSTS, RESOURCE_TYPES, TILE_TYPES, SHIPLESS_MODES,
+  MAX_CANNONS, MAX_MASTS, MAX_LIFE_PEGS,
 } from '../../shared/constants.js';
 import { generateBoard, getStartingIslands } from './board.js';
 import { createResourceDeck, createTreasureDeck, drawFromDeck } from './decks.js';
@@ -39,8 +40,10 @@ export function createGameState(players, playerCount, settings = {}) {
 
     pendingTrade: null,
     pendingTreasure: null, // treasure card awaiting resolution (steal choice, storm discard)
+    pendingStormCost: null, // { playerId, amount } — awaiting player choice on which resources to discard for storm entry/exit
     treaties: [], // active treaties: [{ player1, player2, turnNumber }]
     combatLog: [],
+    attackedThisTurn: {}, // { [shipId]: Set([targetId1, targetId2]) } — prevents same ship attacking same target twice per turn
     turnNumber: 0,
 
     // Game settings (configurable in lobby)
@@ -130,6 +133,34 @@ function isInStorm(state, pos) {
   return state.storm.tiles.some(t => t.col === pos.col && t.row === pos.row);
 }
 
+// Rulebook: if all ports of an island are covered by storm, no resources can be collected
+function isIslandFullyStormBlocked(state, islandId) {
+  if (!state.storm) return false;
+  const island = state.islands[islandId];
+  if (!island || !island.port) return false;
+  // Check if the island's port is in the storm
+  return isInStorm(state, island.port);
+}
+
+// Rulebook: cannot collect treasure through a land barrier
+function hasLandBarrierBetween(state, posA, posB) {
+  // Check if the direct path between two adjacent tiles passes through a land barrier
+  // For orthogonally adjacent tiles, the tile between them IS one of them, so we check
+  // if either tile is a land barrier type
+  const tileA = state.board[posA.row]?.[posA.col];
+  const tileB = state.board[posB.row]?.[posB.col];
+  if (!tileA || !tileB) return true;
+  return tileA.type === TILE_TYPES.LAND_BARRIER || tileB.type === TILE_TYPES.LAND_BARRIER;
+}
+
+// Rulebook: cannot interact across the storm border (one inside, one outside)
+function isAcrossStormBorder(state, posA, posB) {
+  if (!state.storm) return false;
+  const aInStorm = isInStorm(state, posA);
+  const bInStorm = isInStorm(state, posB);
+  return aInStorm !== bInStorm;
+}
+
 export function placeTreasureTokens(state) {
   const count = Object.keys(state.players).length >= 5 ? 4 : 3;
   const is2Player = Object.keys(state.players).length === 2;
@@ -143,8 +174,7 @@ export function placeTreasureTokens(state) {
       pos = getRandomBoardPosition(state);
       attempts++;
     } while (
-      (state.treasureTokens.some(t => t.col === pos.col && t.row === pos.row) ||
-       state.board[pos.row]?.[pos.col]?.type !== TILE_TYPES.SEA) &&
+      state.board[pos.row]?.[pos.col]?.type !== TILE_TYPES.SEA &&
       attempts < 100
     );
     state.treasureTokens.push({ id: uuid(), col: pos.col, row: pos.row });
@@ -223,32 +253,48 @@ function createShip(ownerId, position) {
 
 export function drawResources(state, playerId) {
   const player = state.players[playerId];
-  const islandCount = player.ownedIslands.length;
 
   if (player.ships.length === 0) {
     return handleShiplessDraw(state, playerId);
   }
 
-  const count = Math.max(islandCount, 0);
-  const drawn = drawFromDeck(state.resourceDeck, count);
+  // Rulebook: storm-blocked islands (all ports covered) don't generate resources
+  let drawCount = 0;
+  const blockedIslands = [];
+  for (const islandId of player.ownedIslands) {
+    if (isIslandFullyStormBlocked(state, islandId)) {
+      blockedIslands.push(islandId);
+    } else {
+      drawCount++;
+    }
+  }
+
+  const drawn = drawFromDeck(state.resourceDeck, drawCount);
   for (const r of drawn) {
     player.resources[r]++;
   }
 
   state.turnPhase = TURN_PHASES.ROLL_FOR_MOVE;
-  return { success: true, drawn };
+  return { success: true, drawn, blockedIslands };
 }
 
 function handleShiplessDraw(state, playerId) {
   const player = state.players[playerId];
   const mode = state.settings.shiplessMode;
 
-  // Still draw resources for owned islands
-  const islandCount = player.ownedIslands.length;
-  const drawn = drawFromDeck(state.resourceDeck, islandCount);
+  // Rulebook: storm-blocked islands don't generate resources even for shipless captains
+  let drawCount = 0;
+  for (const islandId of player.ownedIslands) {
+    if (!isIslandFullyStormBlocked(state, islandId)) drawCount++;
+  }
+  const drawn = drawFromDeck(state.resourceDeck, drawCount);
   for (const r of drawn) {
     player.resources[r]++;
   }
+
+  // Rulebook: if no islands AND no PP cards, take one resource of your choosing
+  const needsFreeResource = player.ownedIslands.length === 0 && player.plunderPointCards === 0;
+  const freeResourceNeeded = needsFreeResource && mode === SHIPLESS_MODES.RULEBOOK;
 
   if (mode === SHIPLESS_MODES.FREE_SHIP) {
     const ownedIsland = player.ownedIslands
@@ -275,7 +321,19 @@ function handleShiplessDraw(state, playerId) {
 
   // RULEBOOK mode: need to roll doubles
   state.turnPhase = TURN_PHASES.PERFORM_ACTIONS;
-  return { success: true, drawn, shipless: true, needsShiplessRoll: true };
+  return { success: true, drawn, shipless: true, needsShiplessRoll: true, freeResourceNeeded };
+}
+
+// Shipless captain: choose a free resource (when you have no islands and no PP)
+export function shiplessChooseResource(state, playerId, resourceType) {
+  const player = state.players[playerId];
+  if (player.ships.length > 0) return { error: 'You have ships' };
+  if (player.ownedIslands.length > 0) return { error: 'You own islands' };
+  if (player.plunderPointCards > 0) return { error: 'You have PP cards' };
+  if (!RESOURCE_TYPES.includes(resourceType)) return { error: 'Invalid resource type' };
+
+  player.resources[resourceType]++;
+  return { success: true, resource: resourceType };
 }
 
 export function shiplessRoll(state, playerId) {
@@ -290,18 +348,105 @@ export function shiplessRoll(state, playerId) {
   const isDoubles = die1 === die2;
 
   if (isDoubles) {
-    const ownedIsland = player.ownedIslands
-      .map(id => state.islands[id])
-      .find(i => i && i.port && !isOccupied(state, i.port, null));
-    if (ownedIsland) {
-      const ship = createShip(playerId, ownedIsland.port);
+    const placement = findShipPlacement(state, player);
+    if (placement) {
+      const ship = createShip(playerId, placement);
       player.ships.push(ship);
       return { success: true, die1, die2, doubles: true, gotShip: true };
     }
     return { success: true, die1, die2, doubles: true, gotShip: false, noPort: true };
   }
 
-  return { success: true, die1, die2, doubles: false };
+  // Rulebook: if doubles fail, player can still use alternative methods
+  return { success: true, die1, die2, doubles: false, canUseAlternatives: true };
+}
+
+// Shipless captain: exchange 1 PP card for a ship
+export function shiplessExchangePP(state, playerId) {
+  const player = state.players[playerId];
+  if (player.ships.length > 0) return { error: 'You have ships' };
+  if (player.plunderPointCards < 1) return { error: 'Not enough Plunder Point cards' };
+
+  const placement = findShipPlacement(state, player);
+  if (!placement) return { error: 'No available placement for new ship' };
+
+  player.plunderPointCards--;
+  const ship = createShip(playerId, placement);
+  player.ships.push(ship);
+  return { success: true, ship, method: 'pp_exchange' };
+}
+
+// Shipless captain: exchange 5 gold for a ship
+export function shiplessExchangeGold(state, playerId) {
+  const player = state.players[playerId];
+  if (player.ships.length > 0) return { error: 'You have ships' };
+  if (player.resources.gold < 5) return { error: 'Need 5 gold' };
+
+  const placement = findShipPlacement(state, player);
+  if (!placement) return { error: 'No available placement for new ship' };
+
+  player.resources.gold -= 5;
+  const ship = createShip(playerId, placement);
+  player.ships.push(ship);
+  return { success: true, ship, method: 'gold_exchange' };
+}
+
+// Shipless captain: disown an island to get a ship
+export function shiplessDisownIsland(state, playerId, islandId) {
+  const player = state.players[playerId];
+  if (player.ships.length > 0) return { error: 'You have ships' };
+  if (!player.ownedIslands.includes(islandId)) return { error: 'You do not own this island' };
+
+  const island = state.islands[islandId];
+  if (!island) return { error: 'Island not found' };
+
+  // Remove ownership
+  player.ownedIslands = player.ownedIslands.filter(id => id !== islandId);
+  island.owner = null;
+
+  const placement = findShipPlacement(state, player);
+  if (!placement) return { error: 'No available placement for new ship' };
+
+  const ship = createShip(playerId, placement);
+  player.ships.push(ship);
+  return { success: true, ship, method: 'disown_island', disownedIsland: islandId };
+}
+
+// Helper: find ship placement (port or adjacent to existing ships)
+function findShipPlacement(state, player) {
+  // Try port first
+  const ownedIsland = player.ownedIslands
+    .map(id => state.islands[id])
+    .find(i => i && i.port && !isOccupied(state, i.port, null));
+  if (ownedIsland) return ownedIsland.port;
+
+  // Try adjacent to existing ships
+  for (const ship of player.ships) {
+    for (const [dc, dr] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+      const adjPos = { col: ship.position.col + dc, row: ship.position.row + dr };
+      if (adjPos.col < 0 || adjPos.col >= state.totalCols || adjPos.row < 0 || adjPos.row >= state.totalRows) continue;
+      const tile = state.board[adjPos.row]?.[adjPos.col];
+      if (!tile || (tile.type !== TILE_TYPES.SEA && tile.type !== TILE_TYPES.PORT)) continue;
+      if (isOccupied(state, adjPos, null)) continue;
+      return adjPos;
+    }
+  }
+
+  // Shipless with no ships — place at random port or sea tile near owned island
+  for (const islandId of player.ownedIslands) {
+    const island = state.islands[islandId];
+    if (island?.port && !isOccupied(state, island.port, null)) return island.port;
+  }
+
+  // Last resort: random sea tile
+  let attempts = 0;
+  while (attempts < 100) {
+    const pos = getRandomBoardPosition(state);
+    const tile = state.board[pos.row]?.[pos.col];
+    if (tile?.type === TILE_TYPES.SEA && !isOccupied(state, pos, null)) return pos;
+    attempts++;
+  }
+  return null;
 }
 
 export function rollSailingDie(state) {
@@ -318,7 +463,9 @@ export function rollSailingDie(state) {
   const player = getCurrentPlayer(state);
   let totalMovePoints = roll;
   for (const ship of player.ships) {
-    totalMovePoints += ship.masts;
+    // Only count masts that existed before the roll (not built this turn)
+    const effectiveMasts = ship.masts - (ship.mastBuiltThisTurn || 0);
+    totalMovePoints += Math.max(0, effectiveMasts);
   }
   state.movePointsRemaining = totalMovePoints;
 
@@ -326,13 +473,15 @@ export function rollSailingDie(state) {
 
   for (const ship of player.ships) {
     ship.movesUsed = 0;
-    ship.doneForTurn = false;
+    ship.doneForTurn = ship.builtThisTurn || false; // Ships built this turn can't move
   }
 
   return { roll, totalMovePoints, stormMoved, stormPosition: state.storm };
 }
 
 export function moveShip(state, playerId, shipId, path) {
+  if (state.pendingStormCost) return { error: 'Must resolve storm cost first' };
+
   const player = state.players[playerId];
   const ship = player.ships.find(s => s.id === shipId);
   if (!ship) return { error: 'Ship not found' };
@@ -361,15 +510,17 @@ export function moveShip(state, playerId, shipId, path) {
     current = step;
   }
 
-  // Check storm costs
+  // Check storm costs (Rulebook: treasure card movement costs nothing for storm)
   const stormTiles = state.storm ? state.storm.tiles : [];
   let stormCost = 0;
   const wasInStorm = stormTiles.some(t => t.col === ship.position.col && t.row === ship.position.row);
   const entersStorm = path.some(p => stormTiles.some(t => t.col === p.col && t.row === p.row));
   const finalInStorm = stormTiles.some(t => t.col === current.col && t.row === current.row);
 
-  if (!wasInStorm && entersStorm) stormCost += 2;
-  if (wasInStorm && !finalInStorm) stormCost += 2;
+  if (!ship.movedByTreasure) {
+    if (!wasInStorm && entersStorm) stormCost += 2;
+    if (wasInStorm && !finalInStorm) stormCost += 2;
+  }
 
   const totalResources = Object.values(player.resources).reduce((a, b) => a + b, 0);
   if (stormCost > 0 && totalResources < stormCost) {
@@ -381,14 +532,20 @@ export function moveShip(state, playerId, shipId, path) {
   ship.movesUsed += moveCost;
   state.movePointsRemaining -= moveCost;
 
+  // If storm cost is owed, set pending state for player to choose which resources to pay
+  if (stormCost > 0) {
+    state.pendingStormCost = { playerId, amount: stormCost };
+  }
+
   // Check for treasure tokens along the path (player can choose to pick up)
+  // Rulebook: multiple Xs can occupy the same space — find ALL tokens at each step
   const treasuresOnPath = [];
   for (const step of path) {
-    const tokenIndex = state.treasureTokens.findIndex(
+    const tokensAtStep = state.treasureTokens.filter(
       t => t.col === step.col && t.row === step.row
     );
-    if (tokenIndex !== -1) {
-      treasuresOnPath.push({ ...state.treasureTokens[tokenIndex] });
+    for (const token of tokensAtStep) {
+      treasuresOnPath.push({ ...token });
     }
   }
 
@@ -400,13 +557,62 @@ export function collectTreasure(state, playerId, tokenId) {
   const tokenIndex = state.treasureTokens.findIndex(t => t.id === tokenId);
   if (tokenIndex === -1) return { error: 'Treasure token not found' };
 
-  state.treasureTokens.splice(tokenIndex, 1);
+  const token = state.treasureTokens[tokenIndex];
+  const player = state.players[playerId];
+
+  // Rulebook: X is inaccessible if another player's ship is on it
+  const shipOnToken = Object.values(state.players).some(p =>
+    p.id !== playerId && p.ships.some(s =>
+      s.position.col === token.col && s.position.row === token.row
+    )
+  );
+  if (shipOnToken) {
+    return { error: 'Another player\'s ship is on this treasure token' };
+  }
+
+  // Verify player has a ship on or adjacent to the token
+  const collectingShip = player.ships.find(s =>
+    s.position.col === token.col && s.position.row === token.row
+  );
+  if (!collectingShip) {
+    // Rulebook: if X is on land, ship must be on an adjoining ocean space (not through a land barrier)
+    const adjacentShip = player.ships.find(s => {
+      const dx = Math.abs(s.position.col - token.col);
+      const dy = Math.abs(s.position.row - token.row);
+      if (dx + dy !== 1) return false;
+      // Check for land barrier between ship and treasure
+      if (hasLandBarrierBetween(state, s.position, token)) return false;
+      return true;
+    });
+    if (!adjacentShip) return { error: 'No ship on or adjacent to the treasure (or blocked by land barrier)' };
+
+    // Rulebook: cannot collect across storm border
+    if (isAcrossStormBorder(state, adjacentShip.position, token)) {
+      return { error: 'Cannot collect treasure across the storm border' };
+    }
+  }
+
+  // Rulebook: after collecting, relocate the X token to new random sea tile (not remove it)
+  relocateTreasureToken(state, tokenIndex);
 
   const cards = drawFromDeck(state.treasureDeck, 1);
   if (cards.length === 0) return { error: 'No treasure cards left' };
 
   const card = cards[0];
   return applyTreasureCard(state, playerId, card);
+}
+
+function relocateTreasureToken(state, tokenIndex) {
+  let pos;
+  let attempts = 0;
+  do {
+    pos = getRandomBoardPosition(state);
+    attempts++;
+  } while (
+    state.board[pos.row]?.[pos.col]?.type !== TILE_TYPES.SEA &&
+    attempts < 100
+  );
+  state.treasureTokens[tokenIndex] = { id: state.treasureTokens[tokenIndex].id, col: pos.col, row: pos.row };
 }
 
 function applyTreasureCard(state, playerId, card) {
@@ -449,6 +655,37 @@ function applyTreasureCard(state, playerId, card) {
     }
     case 'end_turn': {
       return { success: true, card, applied: true, endsTurn: true };
+    }
+    case 'free_cannon': {
+      // Find a ship that can receive a cannon
+      const eligibleShip = player.ships.find(s => s.cannons < MAX_CANNONS);
+      if (eligibleShip) {
+        eligibleShip.cannons++;
+        return { success: true, card, applied: true, upgradedShip: eligibleShip.id };
+      }
+      return { success: true, card, applied: false, noEligibleShip: true };
+    }
+    case 'free_mast': {
+      const eligibleShip = player.ships.find(s => s.masts < MAX_MASTS);
+      if (eligibleShip) {
+        eligibleShip.masts++;
+        return { success: true, card, applied: true, upgradedShip: eligibleShip.id };
+      }
+      return { success: true, card, applied: false, noEligibleShip: true };
+    }
+    case 'free_life': {
+      const eligibleShip = player.ships.find(s => s.lifePegs < MAX_LIFE_PEGS);
+      if (eligibleShip) {
+        eligibleShip.lifePegs++;
+        return { success: true, card, applied: true, upgradedShip: eligibleShip.id };
+      }
+      return { success: true, card, applied: false, noEligibleShip: true };
+    }
+    case 'lose_resource': {
+      const loseType = card.resource;
+      const loseAmt = Math.min(card.amount, player.resources[loseType] || 0);
+      player.resources[loseType] -= loseAmt;
+      return { success: true, card, applied: true, lost: { [loseType]: loseAmt } };
     }
     default:
       return { success: true, card, applied: true };
@@ -520,6 +757,34 @@ export function resolveTreasureStormDiscard(state, playerId, discards) {
   return { success: true, discarded: discards };
 }
 
+// Resolve storm entry/exit cost — player chooses which resources to pay
+export function resolveStormCost(state, playerId, discards) {
+  if (!state.pendingStormCost) {
+    return { error: 'No pending storm cost' };
+  }
+  if (state.pendingStormCost.playerId !== playerId) {
+    return { error: 'Not your pending storm cost' };
+  }
+
+  const player = state.players[playerId];
+  const amount = state.pendingStormCost.amount;
+
+  let totalDiscard = 0;
+  for (const [res, count] of Object.entries(discards)) {
+    if (count < 0) return { error: 'Invalid discard' };
+    if (player.resources[res] < count) return { error: `Not enough ${res}` };
+    totalDiscard += count;
+  }
+  if (totalDiscard !== amount) return { error: `Must discard exactly ${amount} resources` };
+
+  for (const [res, count] of Object.entries(discards)) {
+    player.resources[res] -= count;
+  }
+
+  state.pendingStormCost = null;
+  return { success: true, discarded: discards };
+}
+
 function isOccupied(state, pos, excludeShipId) {
   for (const player of Object.values(state.players)) {
     for (const ship of player.ships) {
@@ -552,16 +817,48 @@ export function buildItem(state, playerId, buildType, targetShipId) {
       refundCost(player, cost);
       return { error: 'Maximum 3 ships' };
     }
+
+    // Rulebook: Place ship in an available port OR any adjoining ocean space next to one of your ships
+    let placementPos = null;
+    let placedAtPort = false;
+
+    // First try: available port on owned island
     const ownedIsland = player.ownedIslands
       .map(id => state.islands[id])
       .find(i => i && i.port && !isOccupied(state, i.port, null));
-    if (!ownedIsland) {
-      refundCost(player, cost);
-      return { error: 'No available port for new ship' };
+    if (ownedIsland) {
+      placementPos = ownedIsland.port;
+      placedAtPort = true;
     }
-    const newShip = createShip(playerId, ownedIsland.port);
+
+    // Second try: adjacent sea tile next to any existing ship
+    if (!placementPos && player.ships.length > 0) {
+      for (const existingShip of player.ships) {
+        for (const [dc, dr] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+          const adjPos = { col: existingShip.position.col + dc, row: existingShip.position.row + dr };
+          if (adjPos.col < 0 || adjPos.col >= state.totalCols || adjPos.row < 0 || adjPos.row >= state.totalRows) continue;
+          const tile = state.board[adjPos.row]?.[adjPos.col];
+          if (!tile || (tile.type !== TILE_TYPES.SEA && tile.type !== TILE_TYPES.PORT)) continue;
+          if (isOccupied(state, adjPos, null)) continue;
+          placementPos = adjPos;
+          break;
+        }
+        if (placementPos) break;
+      }
+    }
+
+    if (!placementPos) {
+      refundCost(player, cost);
+      return { error: 'No available port or adjacent space for new ship' };
+    }
+    const newShip = createShip(playerId, placementPos);
+    // Rulebook: ship built after rolling cannot move this turn
+    if (state.hasRolled) {
+      newShip.builtThisTurn = true;
+      newShip.doneForTurn = true;
+    }
     player.ships.push(newShip);
-    return { success: true, ship: newShip };
+    return { success: true, ship: newShip, placedAtPort };
   }
 
   if (buildType === 'plunderPoint') {
@@ -581,12 +878,17 @@ export function buildItem(state, playerId, buildType, targetShipId) {
   }
 
   if (buildType === 'cannon') {
-    if (ship.cannons >= 3) return refundAndError(player, cost, 'Max cannons reached');
+    if (ship.cannons >= MAX_CANNONS) return refundAndError(player, cost, `Max cannons reached (${MAX_CANNONS})`);
     ship.cannons++;
   } else if (buildType === 'mast') {
-    if (ship.masts >= 3) return refundAndError(player, cost, 'Max masts reached');
+    if (ship.masts >= MAX_MASTS) return refundAndError(player, cost, `Max masts reached (${MAX_MASTS})`);
     ship.masts++;
+    // Rulebook: mast built after rolling does not grant extra movement this turn
+    if (state.hasRolled) {
+      ship.mastBuiltThisTurn = (ship.mastBuiltThisTurn || 0) + 1;
+    }
   } else if (buildType === 'lifePeg') {
+    if (ship.lifePegs >= MAX_LIFE_PEGS) return refundAndError(player, cost, `Max life pegs reached (${MAX_LIFE_PEGS})`);
     ship.lifePegs++;
   }
 
@@ -615,22 +917,32 @@ export function attackIsland(state, playerId, shipId, islandId) {
   if (island.type !== 'resource') return { error: 'Cannot attack this island' };
   if (island.owner === playerId) return { error: 'You already own this island' };
 
-  if (island.port && isInStorm(state, island.port)) {
-    return { error: 'Cannot attack islands in the storm' };
-  }
-
   if (!island.port || ship.position.col !== island.port.col || ship.position.row !== island.port.row) {
     return { error: 'Must be in the island port to attack' };
+  }
+
+  // Rulebook: cannot attack across storm border (one in, one out)
+  if (island.tiles?.length > 0 && isAcrossStormBorder(state, ship.position, island.tiles[0])) {
+    return { error: 'Cannot attack across the storm border' };
   }
 
   if (island.owner && hasTreaty(state, playerId, island.owner)) {
     return { error: 'You have a treaty with this player this turn' };
   }
 
+  // Rulebook: same ship cannot attack same island twice per turn
+  if (state.attackedThisTurn[shipId]?.has(islandId)) {
+    return { error: 'This ship already attacked this island this turn' };
+  }
+
   const attackRoll = rollDie(6) + ship.cannons;
   const defenseRoll = rollDie(6) + island.skulls;
   const attackerWins = attackRoll >= defenseRoll;
   ship.doneForTurn = true;
+
+  // Track attack cooldown
+  if (!state.attackedThisTurn[shipId]) state.attackedThisTurn[shipId] = new Set();
+  state.attackedThisTurn[shipId].add(islandId);
 
   if (attackerWins) {
     if (island.owner) {
@@ -643,10 +955,22 @@ export function attackIsland(state, playerId, shipId, islandId) {
   } else {
     ship.lifePegs--;
     const sunk = ship.lifePegs <= 0;
+    let ownerGotPP = false;
     if (sunk) {
       player.ships = player.ships.filter(s => s.id !== shipId);
+      // Rulebook: if attacker sinks at an owned island, the island owner gains a PP
+      if (island.owner && island.owner !== playerId) {
+        const islandOwner = state.players[island.owner];
+        islandOwner.plunderPointCards++;
+        ownerGotPP = true;
+        const total = calculatePlunderPoints(state, island.owner);
+        if (total >= WIN_POINTS) {
+          state.phase = GAME_PHASES.GAME_OVER;
+          state.winner = island.owner;
+        }
+      }
     }
-    return { success: true, won: false, attackRoll, defenseRoll, sunk };
+    return { success: true, won: false, attackRoll, defenseRoll, sunk, ownerGotPP };
   }
 }
 
@@ -671,9 +995,28 @@ export function attackShip(state, attackerId, attackerShipId, defenderShipId) {
   const dy = Math.abs(attackerShip.position.row - defenderShip.position.row);
   if (dx + dy !== 1) return { error: 'Must be adjacent to attack' };
 
+  // Rulebook: cannot attack through a land barrier
+  if (hasLandBarrierBetween(state, attackerShip.position, defenderShip.position)) {
+    return { error: 'Cannot attack through a land barrier' };
+  }
+
+  // Rulebook: cannot attack across storm border
+  if (isAcrossStormBorder(state, attackerShip.position, defenderShip.position)) {
+    return { error: 'Cannot attack across the storm border' };
+  }
+
+  // Rulebook: same ship cannot attack same target ship twice per turn
+  if (state.attackedThisTurn[attackerShipId]?.has(defenderShipId)) {
+    return { error: 'This ship already attacked this target this turn' };
+  }
+
   const attackRoll = rollDie(6) + attackerShip.cannons;
   const defenseRoll = rollDie(6) + defenderShip.cannons;
   const attackerWins = attackRoll >= defenseRoll;
+
+  // Track attack cooldown
+  if (!state.attackedThisTurn[attackerShipId]) state.attackedThisTurn[attackerShipId] = new Set();
+  state.attackedThisTurn[attackerShipId].add(defenderShipId);
 
   if (attackerWins) {
     defenderShip.lifePegs--;
@@ -798,13 +1141,19 @@ export function canTrade(state, fromId, toId) {
   const to = state.players[toId];
   if (!from || !to) return false;
 
+  // Rulebook: if at a merchant island, can trade with ALL players
   if (isPlayerAtMerchant(state, fromId)) return true;
 
   for (const s1 of from.ships) {
     for (const s2 of to.ships) {
       const dx = Math.abs(s1.position.col - s2.position.col);
       const dy = Math.abs(s1.position.row - s2.position.row);
-      if (dx + dy <= 1) return true;
+      if (dx + dy === 1) {
+        // Rulebook: cannot trade through a land barrier
+        if (hasLandBarrierBetween(state, s1.position, s2.position)) continue;
+        // Rulebook: cannot trade across storm border
+        if (!isAcrossStormBorder(state, s1.position, s2.position)) return true;
+      }
     }
   }
 
@@ -812,7 +1161,8 @@ export function canTrade(state, fromId, toId) {
     for (const islandId of to.ownedIslands) {
       const island = state.islands[islandId];
       if (island?.port && s1.position.col === island.port.col && s1.position.row === island.port.row) {
-        return true;
+        // Rulebook: storm-covered ports cannot be used for trade
+        if (!isInStorm(state, island.port)) return true;
       }
     }
   }
@@ -820,7 +1170,7 @@ export function canTrade(state, fromId, toId) {
     for (const islandId of from.ownedIslands) {
       const island = state.islands[islandId];
       if (island?.port && s2.position.col === island.port.col && s2.position.row === island.port.row) {
-        return true;
+        if (!isInStorm(state, island.port)) return true;
       }
     }
   }
@@ -873,6 +1223,8 @@ export function merchantBankTrade(state, playerId, give, receive) {
 // === TURN MANAGEMENT ===
 
 export function endTurn(state) {
+  if (state.pendingStormCost) return { error: 'Must resolve storm cost before ending turn' };
+
   state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.turnOrder.length;
   state.turnPhase = TURN_PHASES.DRAW_RESOURCES;
   state.movePointsRemaining = 0;
@@ -880,7 +1232,17 @@ export function endTurn(state) {
   state.hasRolled = false;
   state.pendingTrade = null;
   state.pendingTreasure = null;
+  state.pendingStormCost = null; // Safety fallback
+  state.attackedThisTurn = {}; // Reset attack cooldowns
   state.turnNumber++;
+
+  // Clear per-ship turn flags
+  for (const p of Object.values(state.players)) {
+    for (const ship of p.ships) {
+      delete ship.builtThisTurn;
+      delete ship.mastBuiltThisTurn;
+    }
+  }
 
   // Skip disconnected players
   let skipped = 0;
@@ -957,6 +1319,7 @@ export function getPublicGameState(state, forPlayerId) {
     treasureDeckCount: state.treasureDeck.length,
     resourceBank: state.resourceBank,
     pendingTreasure: state.pendingTreasure,
+    pendingStormCost: state.pendingStormCost,
     tradeEligible,
     treaties: state.treaties.filter(t => t.turnNumber === state.turnNumber),
     settings: state.settings,

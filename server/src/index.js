@@ -15,9 +15,10 @@ import {
   createGameState, getPublicGameState, pickStartingIsland,
   getAvailableStartingIslands, drawResources, rollSailingDie,
   moveShip, buildItem, attackIsland, attackShip, endTurn, calculatePlunderPoints,
-  collectTreasure, resolveTreasureSteal, resolveTreasureStormDiscard,
+  collectTreasure, resolveTreasureSteal, resolveTreasureStormDiscard, resolveStormCost,
   merchantBankTrade, canTrade, proposeTreaty, resolveTreaty,
-  shiplessRoll,
+  shiplessRoll, shiplessExchangePP, shiplessExchangeGold,
+  shiplessDisownIsland, shiplessChooseResource,
 } from './gameState.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -370,6 +371,22 @@ io.on('connection', (socket) => {
     callback?.(result);
   });
 
+  // --- STORM COST ---
+
+  socket.on('resolve-storm-cost', ({ discards }, callback) => {
+    const found = getRoomBySocketId(socket.id);
+    if (!found || !found.room.gameState) return callback?.({ error: 'No game' });
+
+    const state = found.room.gameState;
+    if (state.turnOrder[state.currentPlayerIndex] !== found.player.id) {
+      return callback?.({ error: 'Not your turn' });
+    }
+
+    const result = resolveStormCost(state, found.player.id, discards);
+    broadcastGameState(found.room);
+    callback?.(result);
+  });
+
   // --- TRADE ---
 
   socket.on(EVENTS.PROPOSE_TRADE, ({ toPlayerId, offer, request }, callback) => {
@@ -522,6 +539,54 @@ io.on('connection', (socket) => {
     }
 
     const result = shiplessRoll(state, found.player.id);
+    broadcastGameState(found.room);
+    callback?.(result);
+  });
+
+  socket.on(EVENTS.SHIPLESS_EXCHANGE_PP, (_, callback) => {
+    const found = getRoomBySocketId(socket.id);
+    if (!found || !found.room.gameState) return callback?.({ error: 'No game' });
+    const state = found.room.gameState;
+    if (state.turnOrder[state.currentPlayerIndex] !== found.player.id) {
+      return callback?.({ error: 'Not your turn' });
+    }
+    const result = shiplessExchangePP(state, found.player.id);
+    broadcastGameState(found.room);
+    callback?.(result);
+  });
+
+  socket.on(EVENTS.SHIPLESS_EXCHANGE_GOLD, (_, callback) => {
+    const found = getRoomBySocketId(socket.id);
+    if (!found || !found.room.gameState) return callback?.({ error: 'No game' });
+    const state = found.room.gameState;
+    if (state.turnOrder[state.currentPlayerIndex] !== found.player.id) {
+      return callback?.({ error: 'Not your turn' });
+    }
+    const result = shiplessExchangeGold(state, found.player.id);
+    broadcastGameState(found.room);
+    callback?.(result);
+  });
+
+  socket.on(EVENTS.SHIPLESS_DISOWN_ISLAND, ({ islandId }, callback) => {
+    const found = getRoomBySocketId(socket.id);
+    if (!found || !found.room.gameState) return callback?.({ error: 'No game' });
+    const state = found.room.gameState;
+    if (state.turnOrder[state.currentPlayerIndex] !== found.player.id) {
+      return callback?.({ error: 'Not your turn' });
+    }
+    const result = shiplessDisownIsland(state, found.player.id, islandId);
+    broadcastGameState(found.room);
+    callback?.(result);
+  });
+
+  socket.on(EVENTS.SHIPLESS_CHOOSE_RESOURCE, ({ resourceType }, callback) => {
+    const found = getRoomBySocketId(socket.id);
+    if (!found || !found.room.gameState) return callback?.({ error: 'No game' });
+    const state = found.room.gameState;
+    if (state.turnOrder[state.currentPlayerIndex] !== found.player.id) {
+      return callback?.({ error: 'Not your turn' });
+    }
+    const result = shiplessChooseResource(state, found.player.id, resourceType);
     broadcastGameState(found.room);
     callback?.(result);
   });

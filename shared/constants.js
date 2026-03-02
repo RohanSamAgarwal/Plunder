@@ -44,7 +44,9 @@ export const WIN_POINTS = 10;
 export const STORM_SIZE = 3; // 3x3 grid
 
 export const INITIAL_LIFE_PEGS = 3;
-export const MAX_UPGRADES = 3; // max cannons, masts per ship
+export const MAX_CANNONS = 2;   // max cannons per ship (rulebook: 2)
+export const MAX_MASTS = 2;     // max masts per ship (rulebook: 2)
+export const MAX_LIFE_PEGS = 3; // max life pegs per ship (rulebook: 3)
 
 export const SHIP_MAX_PER_PLAYER = 3;
 
@@ -100,6 +102,7 @@ export const EVENTS = {
   RESOLVE_TREASURE: 'resolve-treasure',
   TREASURE_RESOLVED: 'treasure-resolved',
   DECLINE_TREASURE: 'decline-treasure',
+  RESOLVE_STORM_COST: 'resolve-storm-cost',
   PROPOSE_TREATY: 'propose-treaty',
   TREATY_PROPOSED: 'treaty-proposed',
   RESPOND_TREATY: 'respond-treaty',
@@ -107,6 +110,9 @@ export const EVENTS = {
   SHIPLESS_ROLL: 'shipless-roll',
   SHIPLESS_RESULT: 'shipless-result',
   SHIPLESS_CHOOSE_RESOURCE: 'shipless-choose-resource',
+  SHIPLESS_EXCHANGE_PP: 'shipless-exchange-pp',
+  SHIPLESS_EXCHANGE_GOLD: 'shipless-exchange-gold',
+  SHIPLESS_DISOWN_ISLAND: 'shipless-disown-island',
   END_TURN: 'end-turn',
   TURN_ENDED: 'turn-ended',
   GAME_OVER: 'game-over',

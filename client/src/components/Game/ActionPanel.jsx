@@ -35,6 +35,9 @@ export default function ActionPanel({
   const [treatyOffer, setTreatyOffer] = useState({ ...EMPTY_RESOURCES });
   const [treasureTargetId, setTreasureTargetId] = useState('');
   const [treasureDiscards, setTreasureDiscards] = useState({ ...EMPTY_RESOURCES });
+  const [shiplessFreeResource, setShiplessFreeResource] = useState('');
+  const [shiplessRollResult, setShiplessRollResult] = useState(null);
+  const [stormCostDiscards, setStormCostDiscards] = useState({ ...EMPTY_RESOURCES });
 
   if (!myPlayer) return null;
 
@@ -78,6 +81,9 @@ export default function ActionPanel({
   const pendingTreasure = gameState?.pendingTreasure;
   const isTreasureMine = pendingTreasure && pendingTreasure.playerId === myPlayer.id;
 
+  const pendingStormCost = gameState?.pendingStormCost;
+  const isStormCostMine = pendingStormCost && pendingStormCost.playerId === myPlayer.id;
+
   async function resolveTreasureSteal() {
     if (!treasureTargetId) return;
     await emit('resolve-treasure', { targetId: treasureTargetId });
@@ -91,18 +97,52 @@ export default function ActionPanel({
     setTreasureDiscards({ ...EMPTY_RESOURCES });
   }
 
+  async function resolveStormCostDiscard() {
+    const total = Object.values(stormCostDiscards).reduce((s, v) => s + v, 0);
+    if (total !== pendingStormCost.amount) return;
+    await emit('resolve-storm-cost', { discards: stormCostDiscards });
+    setStormCostDiscards({ ...EMPTY_RESOURCES });
+  }
+
   async function handleShiplessRoll() {
-    await emit('shipless-roll', {});
+    const result = await emit('shipless-roll', {});
+    if (result?.die1 !== undefined) {
+      setShiplessRollResult(result);
+      setTimeout(() => setShiplessRollResult(null), 5000);
+    }
   }
 
   const tradeablePlayers = Object.values(gameState.players).filter(
     p => p.id !== myPlayer.id && gameState.tradeEligible?.[p.id]
   );
   const otherPlayers = Object.values(gameState.players).filter(p => p.id !== myPlayer.id);
+
   const showBuildSection = isMyTurn && phase === 'gameplay' &&
     (turnPhase === 'draw_resources' || turnPhase === 'roll_for_move' || turnPhase === 'perform_actions');
   const isShipless = (myPlayer.ships?.length || 0) === 0;
   const showShiplessRoll = isShipless && gameState.settings?.shiplessMode === 'rulebook' && isMyTurn && phase === 'gameplay';
+  const showShiplessAlternatives = isShipless && gameState.settings?.shiplessMode === 'rulebook' && isMyTurn && phase === 'gameplay' && turnPhase === 'perform_actions';
+  const canExchangePP = (myPlayer.plunderPointCards || 0) >= 1;
+  const canExchangeGold = (resources?.gold || 0) >= 5;
+  const hasIslandsToDisown = (myPlayer.ownedIslands?.length || 0) > 0;
+  // Rulebook: free resource if no islands AND no PP
+  const showFreeResourceChoice = isShipless && (myPlayer.ownedIslands?.length || 0) === 0 && (myPlayer.plunderPointCards || 0) === 0 && isMyTurn && phase === 'gameplay';
+
+  // Detect if selected ship is at an attackable island port
+  const attackableIsland = (() => {
+    if (!selectedShip || !isMyTurn || turnPhase !== 'perform_actions') return null;
+    const pos = selectedShip.position;
+    const tile = gameState.board?.[pos.row]?.[pos.col];
+    if (tile?.type !== 'port' || !tile.portOf) return null;
+    const island = gameState.islands?.[tile.portOf];
+    if (!island || island.type !== 'resource' || island.owner === myPlayer.id) return null;
+    return island;
+  })();
+
+  async function handleAttackIsland() {
+    if (!attackableIsland || !selectedShip) return;
+    await emit('attack-island', { shipId: selectedShip.id, islandId: attackableIsland.id });
+  }
 
   return (
     <div className="flex-1 overflow-y-auto p-3 space-y-3">
@@ -178,6 +218,35 @@ export default function ActionPanel({
             className="w-full bg-pirate-gold text-pirate-dark py-1.5 rounded text-xs font-bold
                        hover:bg-yellow-400 disabled:opacity-40 disabled:cursor-not-allowed transition">
             Discard
+          </button>
+        </div>
+      )}
+
+      {/* ══════ Pending Storm Cost ══════ */}
+      {isStormCostMine && (
+        <div className="bg-pirate-dark border border-cyan-500 rounded-lg p-3 space-y-2">
+          <h3 className="text-sm text-cyan-400 font-bold">⛈ Storm Toll</h3>
+          <p className="text-xs text-pirate-tan">
+            Pay {pendingStormCost.amount} resource{pendingStormCost.amount !== 1 ? 's' : ''} to pass through the storm:
+          </p>
+          <div className="grid grid-cols-4 gap-1">
+            {Object.keys(EMPTY_RESOURCES).map(r => (
+              <div key={r} className="text-center">
+                <div className="text-[10px] font-bold" style={{ color: RESOURCE_META[r]?.color }}>{RESOURCE_META[r]?.label}</div>
+                <input type="number" min="0" max={resources[r] || 0} value={stormCostDiscards[r]}
+                  onChange={(e) => setStormCostDiscards(prev => ({ ...prev, [r]: parseInt(e.target.value) || 0 }))}
+                  className="w-full bg-pirate-dark border border-pirate-tan/20 rounded text-center text-xs py-0.5 text-white" />
+              </div>
+            ))}
+          </div>
+          <div className="text-[10px] text-pirate-tan/60 text-right">
+            Selected: {Object.values(stormCostDiscards).reduce((s, v) => s + v, 0)} / {pendingStormCost.amount}
+          </div>
+          <button onClick={resolveStormCostDiscard}
+            disabled={Object.values(stormCostDiscards).reduce((s, v) => s + v, 0) !== pendingStormCost.amount}
+            className="w-full bg-cyan-700 text-white py-1.5 rounded text-xs font-bold
+                       hover:bg-cyan-600 disabled:opacity-40 disabled:cursor-not-allowed transition">
+            Pay Storm Toll
           </button>
         </div>
       )}
@@ -272,8 +341,80 @@ export default function ActionPanel({
       {showShiplessRoll && (
         <button onClick={handleShiplessRoll}
           className="w-full bg-purple-700 hover:bg-purple-600 text-white py-2 rounded text-sm transition">
-          Roll for Ship
+          Roll for Ship (Doubles)
         </button>
+      )}
+
+      {/* ══════ Shipless Roll Result ══════ */}
+      {shiplessRollResult && (
+        <div className="bg-pirate-dark border border-pirate-tan/30 rounded-lg p-3 space-y-2">
+          <div className="flex items-center justify-center gap-4">
+            <div className="bg-white text-pirate-dark rounded-lg w-12 h-12 flex items-center justify-center text-xl font-bold shadow-inner">
+              {shiplessRollResult.die1}
+            </div>
+            <div className="bg-white text-pirate-dark rounded-lg w-12 h-12 flex items-center justify-center text-xl font-bold shadow-inner">
+              {shiplessRollResult.die2}
+            </div>
+          </div>
+          {shiplessRollResult.doubles ? (
+            <p className="text-green-400 text-sm font-bold text-center">Doubles! You got a ship!</p>
+          ) : (
+            <p className="text-red-400 text-sm text-center">Not doubles. Try alternatives below or end turn.</p>
+          )}
+        </div>
+      )}
+
+      {/* ══════ Shipless Alternatives ══════ */}
+      {showShiplessAlternatives && (
+        <div className="space-y-1.5">
+          <h4 className="text-[10px] text-pirate-tan/50 uppercase tracking-wider">Alternative Ship Methods</h4>
+          {canAfford(BUILD_COSTS.ship) && (
+            <button onClick={() => onBuild('ship')}
+              className="w-full bg-green-800 hover:bg-green-700 text-white py-1.5 rounded text-xs transition">
+              Build Ship (Resources)
+            </button>
+          )}
+          {canExchangePP && (
+            <button onClick={() => emit('shipless-exchange-pp', {})}
+              className="w-full bg-amber-700 hover:bg-amber-600 text-white py-1.5 rounded text-xs transition">
+              Exchange 1 PP Card → Ship
+            </button>
+          )}
+          {canExchangeGold && (
+            <button onClick={() => emit('shipless-exchange-gold', {})}
+              className="w-full bg-yellow-700 hover:bg-yellow-600 text-white py-1.5 rounded text-xs transition">
+              Exchange 5 Gold → Ship
+            </button>
+          )}
+          {hasIslandsToDisown && (
+            <div className="space-y-1">
+              <p className="text-[10px] text-pirate-tan/50">Disown an island for a ship:</p>
+              {myPlayer.ownedIslands?.map(islandId => (
+                <button key={islandId} onClick={() => emit('shipless-disown-island', { islandId })}
+                  className="w-full bg-red-800 hover:bg-red-700 text-white py-1 rounded text-[10px] transition">
+                  Disown Island {islandId}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ══════ Shipless Free Resource ══════ */}
+      {showFreeResourceChoice && (
+        <div className="bg-pirate-dark border border-pirate-gold rounded-lg p-3 space-y-2">
+          <h4 className="text-xs text-pirate-gold font-bold">Free Resource</h4>
+          <p className="text-[10px] text-pirate-tan">No islands or PP — choose 1 free resource:</p>
+          <div className="grid grid-cols-4 gap-1">
+            {Object.entries(RESOURCE_META).map(([type, meta]) => (
+              <button key={type} onClick={() => emit('shipless-choose-resource', { resourceType: type })}
+                className="text-center rounded p-1.5 border hover:border-pirate-gold transition"
+                style={{ background: meta.bg, borderColor: meta.border }}>
+                <div className="text-[10px] font-bold" style={{ color: meta.color }}>{meta.label}</div>
+              </button>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* ══════ Turn Actions ══════ */}
@@ -300,6 +441,16 @@ export default function ActionPanel({
               Moves: <span className="text-white font-bold">{gameState.movePointsRemaining}</span>
               {selectedShip && ' \u2022 Ship selected \u2014 click to move'}
             </div>
+          )}
+
+          {/* Attack Island button (when docked at an attackable port) */}
+          {attackableIsland && (
+            <button onClick={handleAttackIsland}
+              className="w-full bg-red-700 hover:bg-red-600 text-white py-2 rounded text-sm font-bold transition
+                         border border-red-500/50">
+              Attack Island ({attackableIsland.skulls} skull{attackableIsland.skulls !== 1 ? 's' : ''}
+              {attackableIsland.owner ? ` \u2014 ${gameState.players[attackableIsland.owner]?.name}` : ' \u2014 Unowned'})
+            </button>
           )}
 
           {/* Build */}

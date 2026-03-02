@@ -375,7 +375,7 @@ export function generateBoard(playerCount = 4) {
       }
     }
 
-    // Build island registry
+    // Build island registry — PASS 1: Register all island tiles first
     for (let r = 0; r < totalRows; r++) {
       for (let c = 0; c < totalCols; c++) {
         const tile = board[r][c];
@@ -392,6 +392,13 @@ export function generateBoard(playerCount = 4) {
           }
           islandsMap[tile.islandId].tiles.push({ col: c, row: r });
         }
+      }
+    }
+
+    // Build island registry — PASS 2: Assign ports (all islands now registered)
+    for (let r = 0; r < totalRows; r++) {
+      for (let c = 0; c < totalCols; c++) {
+        const tile = board[r][c];
         if (tile.type === TILE_TYPES.PORT && tile.portOf && islandsMap[tile.portOf]) {
           islandsMap[tile.portOf].port = { col: c, row: r };
         }
@@ -401,6 +408,24 @@ export function generateBoard(playerCount = 4) {
     // Full-board dead-end fix and validation
     const allIslandsList = Object.values(islandsMap);
     fixDeadEnds(board, totalCols, totalRows, allIslandsList);
+
+    // Re-sync island registry after fixDeadEnds (board tiles may have changed)
+    for (const island of Object.values(islandsMap)) {
+      island.tiles = [];
+      island.port = null;
+    }
+    for (let r = 0; r < totalRows; r++) {
+      for (let c = 0; c < totalCols; c++) {
+        const tile = board[r][c];
+        if ((tile.type === TILE_TYPES.ISLAND || tile.type === TILE_TYPES.MERCHANT ||
+             tile.type === TILE_TYPES.NORMAL_ISLAND) && tile.islandId && islandsMap[tile.islandId]) {
+          islandsMap[tile.islandId].tiles.push({ col: c, row: r });
+        }
+        if (tile.type === TILE_TYPES.PORT && tile.portOf && islandsMap[tile.portOf]) {
+          islandsMap[tile.portOf].port = { col: c, row: r };
+        }
+      }
+    }
 
     if (!isSeaConnected(board, totalCols, totalRows)) continue;
     if (findDeadEnds(board, totalCols, totalRows).length > 0) continue;
