@@ -57,6 +57,13 @@ export const SHIPLESS_MODES = {
   FREE_RESOURCES: 'free_resources', // Extra resources to help rebuild
 };
 
+// Attack bribe modes (configurable in lobby)
+export const BRIBE_MODES = {
+  NONE: 'none',         // No bribes, attacks resolve instantly
+  HONOR: 'honor',       // Accepting a bribe cancels the attack
+  RUTHLESS: 'ruthless',  // Can accept bribe AND still attack
+};
+
 export const EVENTS = {
   // Lobby
   CREATE_ROOM: 'create-room',
@@ -113,6 +120,12 @@ export const EVENTS = {
   SHIPLESS_EXCHANGE_PP: 'shipless-exchange-pp',
   SHIPLESS_EXCHANGE_GOLD: 'shipless-exchange-gold',
   SHIPLESS_DISOWN_ISLAND: 'shipless-disown-island',
+  // Attack bribe flow
+  ATTACK_BRIBE_PENDING: 'attack-bribe-pending',
+  ATTACK_BRIBE_OFFER: 'attack-bribe-offer',
+  ATTACK_BRIBE_DECISION: 'attack-bribe-decision',
+  ATTACK_BRIBE_RESOLVE: 'attack-bribe-resolve',
+  ATTACK_BRIBE_RESOLVED: 'attack-bribe-resolved',
   END_TURN: 'end-turn',
   TURN_ENDED: 'turn-ended',
   GAME_OVER: 'game-over',

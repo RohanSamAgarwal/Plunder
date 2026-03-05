@@ -176,24 +176,42 @@ function fixDeadEnds(grid, width, height, islands) {
         continue;
       }
 
-      // For sea dead-ends: fill them in by extending nearest island
-      let filled = false;
+      // For sea dead-ends: FIRST try to open a path by removing a neighboring obstacle
+      // This preserves more open water instead of aggressively filling sea with land
+      let resolved = false;
+
+      // Priority 1: Remove a neighboring NORMAL_ISLAND (obstacle/rock) to open the path
       for (const [dc, dr] of [[0,1],[0,-1],[1,0],[-1,0]]) {
         const nc = de.col+dc, nr = de.row+dr;
         if (nc >= 0 && nc < width && nr >= 0 && nr < height) {
           const n = grid[nr][nc];
-          if (n.type === TILE_TYPES.ISLAND || n.type === TILE_TYPES.NORMAL_ISLAND) {
-            grid[de.row][de.col] = {
-              type: TILE_TYPES.NORMAL_ISLAND,
-              islandId: n.islandId || `rock_${de.col}_${de.row}`,
-              col: de.col, row: de.row,
-            };
-            filled = true;
+          if (n.type === TILE_TYPES.NORMAL_ISLAND) {
+            grid[nr][nc] = { type: TILE_TYPES.SEA, col: nc, row: nr };
+            resolved = true;
             break;
           }
         }
       }
-      if (!filled) {
+
+      // Priority 2: Fill the dead-end by extending nearest island (last resort)
+      if (!resolved) {
+        for (const [dc, dr] of [[0,1],[0,-1],[1,0],[-1,0]]) {
+          const nc = de.col+dc, nr = de.row+dr;
+          if (nc >= 0 && nc < width && nr >= 0 && nr < height) {
+            const n = grid[nr][nc];
+            if (n.type === TILE_TYPES.ISLAND) {
+              grid[de.row][de.col] = {
+                type: TILE_TYPES.NORMAL_ISLAND,
+                islandId: n.islandId || `rock_${de.col}_${de.row}`,
+                col: de.col, row: de.row,
+              };
+              resolved = true;
+              break;
+            }
+          }
+        }
+      }
+      if (!resolved) {
         grid[de.row][de.col] = {
           type: TILE_TYPES.NORMAL_ISLAND,
           islandId: `rock_${de.col}_${de.row}`,
@@ -330,6 +348,283 @@ function generateFallbackPanel(panelId) {
   };
 }
 
+// ── Border Obstacle Placement ──────────────────────────────────
+
+function placeBorderObstacles(board, totalCols, totalRows, islandsMap) {
+  const panelSize = PANEL_SIZE;
+  const placed = [];
+
+  // Identify seam positions
+  // Vertical seams: between panel columns (e.g. cols 5|6, 11|12 for 18-col board)
+  const verticalSeams = [];
+  for (let pc = 1; pc < Math.floor(totalCols / panelSize); pc++) {
+    verticalSeams.push(pc * panelSize - 1); // col 5, 11 (right side of seam)
+    verticalSeams.push(pc * panelSize);      // col 6, 12 (left side of seam)
+  }
+
+  // Horizontal seam: between panel rows (row 5|6)
+  const horizontalSeams = [];
+  for (let pr = 1; pr < Math.floor(totalRows / panelSize); pr++) {
+    horizontalSeams.push(pr * panelSize - 1); // row 5
+    horizontalSeams.push(pr * panelSize);      // row 6
+  }
+
+  // Place obstacles along vertical seams
+  for (let s = 0; s < verticalSeams.length; s += 2) {
+    const col1 = verticalSeams[s];
+    const col2 = verticalSeams[s + 1];
+    const candidates = [];
+
+    for (let r = 0; r < totalRows; r++) {
+      for (const c of [col1, col2]) {
+        if (board[r][c].type === TILE_TYPES.SEA) {
+          // Check navigable neighbor count after hypothetical placement
+          let navCount = 0;
+          for (const [dc, dr] of [[0,1],[0,-1],[1,0],[-1,0]]) {
+            const nc = c + dc, nr = r + dr;
+            if (nc >= 0 && nc < totalCols && nr >= 0 && nr < totalRows) {
+              const t = board[nr][nc];
+              if (t.type === TILE_TYPES.SEA || t.type === TILE_TYPES.PORT) navCount++;
+            }
+          }
+          if (navCount >= 3) {
+            candidates.push({ col: c, row: r });
+          }
+        }
+      }
+    }
+
+    shuffleArray(candidates);
+    const count = 1 + Math.floor(Math.random() * 3); // 1-3 obstacles per seam
+    let placedCount = 0;
+
+    for (const cand of candidates) {
+      if (placedCount >= count) break;
+      // Re-check neighbors (previous placements may have changed things)
+      let navCount = 0;
+      for (const [dc, dr] of [[0,1],[0,-1],[1,0],[-1,0]]) {
+        const nc = cand.col + dc, nr = cand.row + dr;
+        if (nc >= 0 && nc < totalCols && nr >= 0 && nr < totalRows) {
+          const t = board[nr][nc];
+          if (t.type === TILE_TYPES.SEA || t.type === TILE_TYPES.PORT) navCount++;
+        }
+      }
+      if (navCount < 3) continue;
+
+      const obstId = `border_obstacle_${placed.length}`;
+      board[cand.row][cand.col] = {
+        type: TILE_TYPES.NORMAL_ISLAND,
+        islandId: obstId,
+        isBorderObstacle: true,
+        col: cand.col,
+        row: cand.row,
+      };
+      islandsMap[obstId] = {
+        id: obstId,
+        tiles: [{ col: cand.col, row: cand.row }],
+        skulls: 0,
+        type: 'obstacle',
+        port: null,
+        owner: null,
+      };
+      placed.push(cand);
+      placedCount++;
+    }
+  }
+
+  // Place obstacles along horizontal seams
+  for (let s = 0; s < horizontalSeams.length; s += 2) {
+    const row1 = horizontalSeams[s];
+    const row2 = horizontalSeams[s + 1];
+    const candidates = [];
+
+    for (let c = 0; c < totalCols; c++) {
+      for (const r of [row1, row2]) {
+        if (board[r][c].type === TILE_TYPES.SEA) {
+          let navCount = 0;
+          for (const [dc, dr] of [[0,1],[0,-1],[1,0],[-1,0]]) {
+            const nc = c + dc, nr = r + dr;
+            if (nc >= 0 && nc < totalCols && nr >= 0 && nr < totalRows) {
+              const t = board[nr][nc];
+              if (t.type === TILE_TYPES.SEA || t.type === TILE_TYPES.PORT) navCount++;
+            }
+          }
+          if (navCount >= 3) {
+            candidates.push({ col: c, row: r });
+          }
+        }
+      }
+    }
+
+    shuffleArray(candidates);
+    const count = 1 + Math.floor(Math.random() * 3);
+    let placedCount = 0;
+
+    for (const cand of candidates) {
+      if (placedCount >= count) break;
+      let navCount = 0;
+      for (const [dc, dr] of [[0,1],[0,-1],[1,0],[-1,0]]) {
+        const nc = cand.col + dc, nr = cand.row + dr;
+        if (nc >= 0 && nc < totalCols && nr >= 0 && nr < totalRows) {
+          const t = board[nr][nc];
+          if (t.type === TILE_TYPES.SEA || t.type === TILE_TYPES.PORT) navCount++;
+        }
+      }
+      if (navCount < 3) continue;
+
+      const obstId = `border_obstacle_${placed.length}`;
+      board[cand.row][cand.col] = {
+        type: TILE_TYPES.NORMAL_ISLAND,
+        islandId: obstId,
+        isBorderObstacle: true,
+        col: cand.col,
+        row: cand.row,
+      };
+      islandsMap[obstId] = {
+        id: obstId,
+        tiles: [{ col: cand.col, row: cand.row }],
+        skulls: 0,
+        type: 'obstacle',
+        port: null,
+        owner: null,
+      };
+      placed.push(cand);
+      placedCount++;
+    }
+  }
+
+  // Validate connectivity — remove obstacles if sea is disconnected
+  while (placed.length > 0 && !isSeaConnected(board, totalCols, totalRows)) {
+    const last = placed.pop();
+    const tile = board[last.row][last.col];
+    const obstId = tile.islandId;
+    board[last.row][last.col] = { type: TILE_TYPES.SEA, col: last.col, row: last.row };
+    delete islandsMap[obstId];
+  }
+}
+
+// ── Wall Barrier Generation ────────────────────────────────────
+
+function canonicalWallKey(col1, row1, col2, row2) {
+  // Canonical form: lower col first, or same col → lower row first
+  if (col1 < col2 || (col1 === col2 && row1 < row2)) {
+    return `${col1},${row1}|${col2},${row2}`;
+  }
+  return `${col2},${row2}|${col1},${row1}`;
+}
+
+function isSeaConnectedWithWalls(board, width, height, wallSet) {
+  // BFS that respects wall barriers (can't cross walled edges)
+  let start = null, total = 0;
+  for (let r = 0; r < height; r++) {
+    for (let c = 0; c < width; c++) {
+      if (board[r][c].type === TILE_TYPES.SEA || board[r][c].type === TILE_TYPES.PORT) {
+        total++;
+        if (!start) start = { col: c, row: r };
+      }
+    }
+  }
+  if (!start) return false;
+
+  const visited = new Set();
+  const queue = [start];
+  visited.add(`${start.col},${start.row}`);
+
+  while (queue.length > 0) {
+    const cur = queue.shift();
+    for (const [dc, dr] of [[0,1],[0,-1],[1,0],[-1,0]]) {
+      const nc = cur.col+dc, nr = cur.row+dr, key = `${nc},${nr}`;
+      if (nc >= 0 && nc < width && nr >= 0 && nr < height && !visited.has(key)) {
+        const t = board[nr][nc];
+        if (t.type === TILE_TYPES.SEA || t.type === TILE_TYPES.PORT) {
+          // Check if this edge is walled
+          const wk = canonicalWallKey(cur.col, cur.row, nc, nr);
+          if (wallSet.has(wk)) continue;
+          visited.add(key);
+          queue.push({ col: nc, row: nr });
+        }
+      }
+    }
+  }
+  return visited.size === total;
+}
+
+function isAdjacentToIsland(board, col, row, width, height) {
+  for (const [dc, dr] of [[0,1],[0,-1],[1,0],[-1,0]]) {
+    const nc = col+dc, nr = row+dr;
+    if (nc >= 0 && nc < width && nr >= 0 && nr < height) {
+      const t = board[nr][nc];
+      if (t.type === TILE_TYPES.ISLAND || t.type === TILE_TYPES.MERCHANT ||
+          t.type === TILE_TYPES.NORMAL_ISLAND) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function generateWalls(board, totalCols, totalRows, islandsMap, is2Player) {
+  const candidates = [];
+  const seen = new Set();
+
+  for (let r = 0; r < totalRows; r++) {
+    for (let c = 0; c < totalCols; c++) {
+      const tile = board[r][c];
+      if (tile.type !== TILE_TYPES.SEA && tile.type !== TILE_TYPES.PORT) continue;
+
+      for (const [dc, dr] of [[0,1],[1,0]]) { // Only check right and down to avoid duplicates
+        const nc = c+dc, nr = r+dr;
+        if (nc >= totalCols || nr >= totalRows) continue;
+        const neighbor = board[nr][nc];
+        if (neighbor.type !== TILE_TYPES.SEA && neighbor.type !== TILE_TYPES.PORT) continue;
+
+        // Skip edges where either tile is a port (don't wall off ports)
+        if (tile.type === TILE_TYPES.PORT || neighbor.type === TILE_TYPES.PORT) continue;
+
+        const wk = canonicalWallKey(c, r, nc, nr);
+        if (seen.has(wk)) continue;
+        seen.add(wk);
+
+        // Wall candidate if near an island or near board edge
+        const nearIsland = isAdjacentToIsland(board, c, r, totalCols, totalRows) ||
+                          isAdjacentToIsland(board, nc, nr, totalCols, totalRows);
+        const nearEdge = c === 0 || c === totalCols-1 || r === 0 || r === totalRows-1 ||
+                        nc === 0 || nc === totalCols-1 || nr === 0 || nr === totalRows-1;
+
+        if (nearIsland || nearEdge) {
+          candidates.push({ col1: c, row1: r, col2: nc, row2: nr });
+        }
+      }
+    }
+  }
+
+  shuffleArray(candidates);
+
+  const targetMin = is2Player ? 6 : 10;
+  const targetMax = is2Player ? 10 : 18;
+  const targetCount = targetMin + Math.floor(Math.random() * (targetMax - targetMin + 1));
+
+  const walls = [];
+  const wallSet = new Set();
+
+  for (const cand of candidates) {
+    if (walls.length >= targetCount) break;
+
+    const wk = canonicalWallKey(cand.col1, cand.row1, cand.col2, cand.row2);
+    wallSet.add(wk);
+
+    // Verify sea remains connected with this wall
+    if (!isSeaConnectedWithWalls(board, totalCols, totalRows, wallSet)) {
+      wallSet.delete(wk);
+      continue;
+    }
+
+    walls.push(cand);
+  }
+
+  return walls;
+}
+
 // ── Full Board Generation ──────────────────────────────────────
 
 export function generateBoard(playerCount = 4) {
@@ -405,6 +700,9 @@ export function generateBoard(playerCount = 4) {
       }
     }
 
+    // Place border obstacles along panel seams
+    placeBorderObstacles(board, totalCols, totalRows, islandsMap);
+
     // Full-board dead-end fix and validation
     const allIslandsList = Object.values(islandsMap);
     fixDeadEnds(board, totalCols, totalRows, allIslandsList);
@@ -430,6 +728,16 @@ export function generateBoard(playerCount = 4) {
     if (!isSeaConnected(board, totalCols, totalRows)) continue;
     if (findDeadEnds(board, totalCols, totalRows).length > 0) continue;
 
+    // Sea density check — reject boards with too many land tiles
+    let seaCount = 0;
+    for (let r = 0; r < totalRows; r++) {
+      for (let c = 0; c < totalCols; c++) {
+        if (board[r][c].type === TILE_TYPES.SEA || board[r][c].type === TILE_TYPES.PORT) seaCount++;
+      }
+    }
+    const seaPct = seaCount / (totalCols * totalRows);
+    if (seaPct < 0.55) continue;
+
     const oneSkull = Object.values(islandsMap).filter(i => i.type === 'resource' && i.skulls === 1 && i.port).length;
     const merchants = Object.values(islandsMap).filter(i => i.type === 'merchant').length;
     // Need at least one 1-skull per player for starting islands
@@ -437,7 +745,10 @@ export function generateBoard(playerCount = 4) {
     if (oneSkull < playerCount) continue;
     if (!is2Player && merchants < 1) continue;
 
-    return { board, islands: islandsMap, totalCols, totalRows, panelLayout: order };
+    // Generate edge walls near islands and board edges
+    const walls = generateWalls(board, totalCols, totalRows, islandsMap, is2Player);
+
+    return { board, islands: islandsMap, totalCols, totalRows, panelLayout: order, walls };
   }
 
   // Last resort fallback
@@ -517,7 +828,7 @@ function generateSimpleFallback(totalCols, totalRows) {
       type: s.m ? 'merchant' : 'resource', owner: null,
     };
   }
-  return { board, islands, totalCols, totalRows, panelLayout: [0,1,2,3,4,5] };
+  return { board, islands, totalCols, totalRows, panelLayout: [0,1,2,3,4,5], walls: [] };
 }
 
 export function getStartingIslands(islands) {

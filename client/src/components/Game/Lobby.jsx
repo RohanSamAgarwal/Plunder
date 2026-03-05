@@ -137,6 +137,27 @@ export default function Lobby({ room, playerInfo, messages, onStartGame }) {
                 <option value="free_resources">Bonus Resources</option>
               </select>
             </div>
+            <div>
+              <label className="block text-xs text-pirate-tan/70 mb-1">
+                Attack Bribe Mode
+              </label>
+              <select
+                value={room.settings?.bribeMode ?? 'none'}
+                onChange={(e) =>
+                  emit('update-settings', {
+                    settings: { bribeMode: e.target.value },
+                  })
+                }
+                disabled={!isHost}
+                className={`w-full bg-pirate-dark border border-pirate-tan/30 rounded px-3 py-2
+                           text-sm text-white focus:outline-none focus:border-pirate-gold
+                           ${!isHost ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+              >
+                <option value="none">None (Instant Attacks)</option>
+                <option value="honor">Honor (Bribe Cancels Attack)</option>
+                <option value="ruthless">Ruthless (Bribe + Attack Possible)</option>
+              </select>
+            </div>
           </div>
         </div>
 

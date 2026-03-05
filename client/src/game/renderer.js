@@ -1,36 +1,61 @@
 // Canvas-based board renderer for Plunder: A Pirate's Life
-// Draws organic islands with vegetation, sandy shores, and ocean waves
+// Rich procedural rendering with layered islands, depth-aware ocean, and detailed decorations
 // Dynamically sized for any viewport — targets ~80px tiles at 1920×1080
 
 const COLORS = {
   // Ocean
   sea1: '#1a4a6b',
   sea2: '#174060',
-  seaDeep: '#123550',
-  shallowSea: '#1f5a7d',
-  // Islands
+  seaDeep: '#0f2d45',
+  seaShallow: '#1f6080',
+  seaFoam: '#2a7a9a',
+  seaCaustic: 'rgba(80,200,240,0.06)',
+  seaWave: 'rgba(100,180,220,0.10)',
+  // Beach / Shore
   sand: '#d4b067',
   sandDark: '#b8963a',
   sandWet: '#a08540',
+  beachLight: '#e8cc88',
+  beachWet: '#8a7538',
+  beachFoam: 'rgba(220,240,255,0.18)',
+  // Vegetation
   green1: '#4a8c3f',
   green2: '#3d7a34',
   greenDark: '#2d5c26',
   greenLight: '#5aad4a',
+  palmTrunk: '#6b4226',
+  palmFrond: '#3d8b2f',
+  palmFrondLight: '#5aad3a',
+  flowerRed: '#c0392b',
+  flowerYellow: '#f1c40f',
+  cliffBrown: '#5a4030',
   // Merchant
   merchantSand: '#c9a84c',
   merchantGreen: '#5a9944',
+  canopyRed: '#b03030',
+  crateWood: '#7a5a30',
   // Obstacles / normal islands
   rock: '#6b6b5a',
   rockDark: '#4a4a3d',
-  rockLight: '#7d7d6a',
+  rockLight: '#8a8a76',
+  coralPink: '#c0756b',
+  coralOrange: '#d4845a',
+  seaweedGreen: '#2d6b3a',
+  tidePool: '#1a5060',
+  barnacle: '#9a9080',
   // Port
   portWater: '#1e5570',
   portDock: '#8b7355',
   portDockLight: '#a08a66',
+  plankDark: '#6b5030',
+  ropeColor: '#a09070',
+  lanternGlow: 'rgba(255,200,80,0.25)',
   // Storm
-  stormDark: 'rgba(40, 15, 70, 0.35)',
+  stormDark: 'rgba(40, 15, 70, 0.38)',
   stormLight: 'rgba(60, 25, 100, 0.2)',
   stormBorder: '#8b5cf6',
+  stormCloud: 'rgba(30,15,50,0.15)',
+  rainDrop: 'rgba(180,200,220,0.18)',
   // Treasure
   treasure: '#ffd700',
   // UI
@@ -45,6 +70,28 @@ const SHIP_COLORS = {
   red: '#ef4444', blue: '#3b82f6', green: '#22c55e',
   yellow: '#eab308', purple: '#a855f7', orange: '#f97316',
 };
+
+// ── Offscreen Board Cache ────────────────────────────────────────
+let _cachedBoard = null; // { canvas, tileSize, boardKey }
+
+function computeBoardKey(board, totalCols, totalRows, walls) {
+  // Simple hash of tile types + positions + walls for cache invalidation
+  let hash = 0;
+  for (let r = 0; r < totalRows; r++) {
+    for (let c = 0; c < totalCols; c++) {
+      const t = board[r][c];
+      const typeVal = t.type.charCodeAt(0) + (t.type.charCodeAt(1) || 0);
+      hash = ((hash << 5) - hash + typeVal + c * 31 + r * 37) | 0;
+    }
+  }
+  // Include walls in hash
+  if (walls) {
+    for (const w of walls) {
+      hash = ((hash << 5) - hash + w.col1 * 13 + w.row1 * 17 + w.col2 * 19 + w.row2 * 23) | 0;
+    }
+  }
+  return hash;
+}
 
 // Calculate optimal tile size for the viewport
 export function calculateLayout(viewportW, viewportH, sidebarW = 400, topBarH = 52) {
@@ -67,6 +114,38 @@ export function drawBoard(ctx, canvas, gameState, options = {}, layout = { tileS
   const boardH = totalRows * ts;
   canvas.width = boardW + gp * 2;
   canvas.height = boardH + gp * 2;
+
+  // ── Static Layer (cached) ──
+  const boardKey = computeBoardKey(board, totalCols, totalRows, gameState.walls);
+  if (_cachedBoard && _cachedBoard.boardKey === boardKey && _cachedBoard.tileSize === ts) {
+    // Draw from cache
+    ctx.drawImage(_cachedBoard.canvas, 0, 0);
+  } else {
+    // Build static layer
+    drawStaticLayer(ctx, canvas, gameState, layout);
+    // Cache it
+    try {
+      const cacheCanvas = document.createElement('canvas');
+      cacheCanvas.width = canvas.width;
+      cacheCanvas.height = canvas.height;
+      const cacheCtx = cacheCanvas.getContext('2d');
+      cacheCtx.drawImage(canvas, 0, 0);
+      _cachedBoard = { canvas: cacheCanvas, tileSize: ts, boardKey };
+    } catch (e) {
+      // Cache failure is non-critical
+    }
+  }
+
+  // ── Dynamic Layer (per-frame) ──
+  drawDynamicLayer(ctx, gameState, options, layout);
+}
+
+function drawStaticLayer(ctx, canvas, gameState, layout) {
+  const { board, totalCols, totalRows, islands, players } = gameState;
+  const ts = layout.tileSize;
+  const gp = layout.gridPad;
+  const boardW = totalCols * ts;
+  const boardH = totalRows * ts;
 
   // Background
   ctx.fillStyle = '#0a1e2a';
@@ -121,7 +200,7 @@ export function drawBoard(ctx, canvas, gameState, options = {}, layout = { tileS
           drawPortTile(ctx, x, y, c, r, ts, tile, islands, players);
           break;
         case 'normal_island':
-          drawRockTile(ctx, x, y, c, r, ts, islandSet);
+          drawRockTile(ctx, x, y, c, r, ts, islandSet, tile);
           break;
         case 'land_barrier':
           drawLandBarrier(ctx, x, y, ts);
@@ -134,25 +213,11 @@ export function drawBoard(ctx, canvas, gameState, options = {}, layout = { tileS
       ctx.strokeStyle = COLORS.gridLine;
       ctx.lineWidth = 0.5;
       ctx.strokeRect(x, y, ts, ts);
-
-      // Valid move highlights
-      if (validMoves?.some(m => m.col === c && m.row === r)) {
-        ctx.fillStyle = COLORS.moveHighlight;
-        ctx.fillRect(x, y, ts, ts);
-        ctx.strokeStyle = COLORS.moveBorder;
-        ctx.lineWidth = 2;
-        ctx.setLineDash([ts * 0.08, ts * 0.08]);
-        ctx.strokeRect(x + 1, y + 1, ts - 2, ts - 2);
-        ctx.setLineDash([]);
-      }
-
-      // Hover
-      if (hoveredTile?.col === c && hoveredTile?.row === r) {
-        ctx.fillStyle = COLORS.highlight;
-        ctx.fillRect(x, y, ts, ts);
-      }
     }
   }
+
+  // Wall barriers between tiles
+  drawWalls(ctx, gameState, ts, gp);
 
   // Island decorations (flags, skull badges)
   for (let r = 0; r < totalRows; r++) {
@@ -171,6 +236,42 @@ export function drawBoard(ctx, canvas, gameState, options = {}, layout = { tileS
         }
       }
     }
+  }
+
+  // Compass rose
+  drawCompassRose(ctx, canvas.width - gp + 2, canvas.height - gp + 2, gp * 0.7);
+
+  // Board edge vignette
+  drawBoardEdge(ctx, canvas.width, canvas.height, gp, totalCols * ts, totalRows * ts);
+}
+
+function drawDynamicLayer(ctx, gameState, options, layout) {
+  const { selectedShip, hoveredTile, validMoves, selectedIsland } = options;
+  const { board, totalCols, totalRows, storm, treasureTokens, islands, players } = gameState;
+  const ts = layout.tileSize;
+  const gp = layout.gridPad;
+
+  // Valid move highlights
+  if (validMoves) {
+    for (const m of validMoves) {
+      const x = gp + m.col * ts;
+      const y = gp + m.row * ts;
+      ctx.fillStyle = COLORS.moveHighlight;
+      ctx.fillRect(x, y, ts, ts);
+      ctx.strokeStyle = COLORS.moveBorder;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([ts * 0.08, ts * 0.08]);
+      ctx.strokeRect(x + 1, y + 1, ts - 2, ts - 2);
+      ctx.setLineDash([]);
+    }
+  }
+
+  // Hover
+  if (hoveredTile) {
+    const x = gp + hoveredTile.col * ts;
+    const y = gp + hoveredTile.row * ts;
+    ctx.fillStyle = COLORS.highlight;
+    ctx.fillRect(x, y, ts, ts);
   }
 
   // Storm
@@ -197,167 +298,327 @@ export function drawBoard(ctx, canvas, gameState, options = {}, layout = { tileS
       ctx.strokeRect(gp + t.col * ts + 1, gp + t.row * ts + 1, ts - 2, ts - 2);
     }
   }
-
-  // Board edge vignette
-  drawBoardEdge(ctx, canvas.width, canvas.height, gp);
 }
 
 // ── Tile Renderers ─────────────────────────────────────────────
 
 function drawSeaTile(ctx, x, y, col, row, ts, islandSet) {
-  // Gradient base for depth variation
-  const base = (row + col) % 2 === 0 ? COLORS.sea1 : COLORS.sea2;
+  // Depth-aware base: deeper blue away from islands
+  const nearIsland = islandSet.has(`${col},${row - 1}`) || islandSet.has(`${col},${row + 1}`) ||
+                     islandSet.has(`${col - 1},${row}`) || islandSet.has(`${col + 1},${row}`);
+  const base = nearIsland ? COLORS.seaShallow : ((row + col) % 2 === 0 ? COLORS.sea1 : COLORS.sea2);
   ctx.fillStyle = base;
   ctx.fillRect(x, y, ts, ts);
 
-  // Subtle radial depth
-  const grad = ctx.createRadialGradient(x + ts * 0.4, y + ts * 0.4, 0, x + ts / 2, y + ts / 2, ts * 0.9);
-  grad.addColorStop(0, 'rgba(30, 90, 130, 0.12)');
-  grad.addColorStop(1, 'transparent');
-  ctx.fillStyle = grad;
-  ctx.fillRect(x, y, ts, ts);
+  // Depth gradient overlay
+  if (!nearIsland) {
+    const grad = ctx.createRadialGradient(x + ts * 0.4, y + ts * 0.4, 0, x + ts / 2, y + ts / 2, ts * 0.9);
+    grad.addColorStop(0, 'rgba(15, 45, 69, 0.18)');
+    grad.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad;
+    ctx.fillRect(x, y, ts, ts);
+  } else {
+    // Shallow water brightening near islands
+    const grad = ctx.createRadialGradient(x + ts / 2, y + ts / 2, ts * 0.1, x + ts / 2, y + ts / 2, ts * 0.7);
+    grad.addColorStop(0, 'rgba(31, 96, 128, 0.12)');
+    grad.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad;
+    ctx.fillRect(x, y, ts, ts);
+  }
 
-  // Wave lines (3 per tile)
-  ctx.strokeStyle = 'rgba(100, 180, 220, 0.06)';
-  ctx.lineWidth = 1;
+  // Wave lines (5 per tile with varied amplitude)
   const seed = (col * 7 + row * 13) % 17;
-  for (let i = 0; i < 3; i++) {
-    const waveY = y + ts * 0.15 + i * ts * 0.28 + (seed % 5);
-    const amp = ts * 0.035;
+  for (let i = 0; i < 5; i++) {
+    const waveOpacity = 0.05 + (i % 3) * 0.02;
+    ctx.strokeStyle = `rgba(100, 180, 220, ${waveOpacity})`;
+    ctx.lineWidth = 0.8 + (i % 2) * 0.4;
+    const waveY = y + ts * 0.08 + i * ts * 0.18 + ((seed + i * 3) % 7);
+    const amp = ts * 0.025 + (i % 3) * ts * 0.015;
     ctx.beginPath();
     ctx.moveTo(x, waveY);
-    ctx.quadraticCurveTo(x + ts * 0.25, waveY - amp, x + ts * 0.5, waveY);
+    ctx.quadraticCurveTo(x + ts * 0.25, waveY - amp, x + ts * 0.5, waveY + ((seed + i) % 3) * 0.5);
     ctx.quadraticCurveTo(x + ts * 0.75, waveY + amp, x + ts, waveY);
     ctx.stroke();
   }
 
-  // Shore wash on tiles adjacent to land
+  // Caustic light spots (2-3 per tile)
+  const causticCount = 2 + (seed % 2);
+  for (let i = 0; i < causticCount; i++) {
+    const cx = x + ((seed * 11 + i * 31) % Math.round(ts * 0.7)) + ts * 0.15;
+    const cy = y + ((seed * 17 + i * 23) % Math.round(ts * 0.7)) + ts * 0.15;
+    const cr = ts * 0.03 + (i % 2) * ts * 0.02;
+    ctx.fillStyle = COLORS.seaCaustic;
+    ctx.beginPath();
+    ctx.arc(cx, cy, cr, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Shore wash and foam on tiles adjacent to land
   drawShoreWash(ctx, x, y, col, row, ts, islandSet);
 }
 
 function drawShoreWash(ctx, x, y, col, row, ts, islandSet) {
-  const shoreW = Math.round(ts * 0.12);
-  const shoreColor = 'rgba(160, 200, 220, 0.08)';
-  if (islandSet.has(`${col},${row - 1}`)) {
-    const g = ctx.createLinearGradient(x, y, x, y + shoreW);
-    g.addColorStop(0, shoreColor);
-    g.addColorStop(1, 'transparent');
-    ctx.fillStyle = g;
-    ctx.fillRect(x, y, ts, shoreW);
-  }
-  if (islandSet.has(`${col},${row + 1}`)) {
-    const g = ctx.createLinearGradient(x, y + ts, x, y + ts - shoreW);
-    g.addColorStop(0, shoreColor);
-    g.addColorStop(1, 'transparent');
-    ctx.fillStyle = g;
-    ctx.fillRect(x, y + ts - shoreW, ts, shoreW);
-  }
-  if (islandSet.has(`${col - 1},${row}`)) {
-    const g = ctx.createLinearGradient(x, y, x + shoreW, y);
-    g.addColorStop(0, shoreColor);
-    g.addColorStop(1, 'transparent');
-    ctx.fillStyle = g;
-    ctx.fillRect(x, y, shoreW, ts);
-  }
-  if (islandSet.has(`${col + 1},${row}`)) {
-    const g = ctx.createLinearGradient(x + ts, y, x + ts - shoreW, y);
-    g.addColorStop(0, shoreColor);
-    g.addColorStop(1, 'transparent');
-    ctx.fillStyle = g;
-    ctx.fillRect(x + ts - shoreW, y, shoreW, ts);
+  const shoreW = Math.round(ts * 0.16);
+  const shoreColor = 'rgba(160, 210, 230, 0.15)';
+  const foamColor = COLORS.beachFoam;
+  const foamDotR = Math.max(1, ts * 0.015);
+
+  const sides = [
+    { has: islandSet.has(`${col},${row - 1}`), dir: 'N' },
+    { has: islandSet.has(`${col},${row + 1}`), dir: 'S' },
+    { has: islandSet.has(`${col - 1},${row}`), dir: 'W' },
+    { has: islandSet.has(`${col + 1},${row}`), dir: 'E' },
+  ];
+
+  for (const side of sides) {
+    if (!side.has) continue;
+    let g;
+    if (side.dir === 'N') {
+      g = ctx.createLinearGradient(x, y, x, y + shoreW);
+      g.addColorStop(0, shoreColor); g.addColorStop(1, 'transparent');
+      ctx.fillStyle = g; ctx.fillRect(x, y, ts, shoreW);
+    } else if (side.dir === 'S') {
+      g = ctx.createLinearGradient(x, y + ts, x, y + ts - shoreW);
+      g.addColorStop(0, shoreColor); g.addColorStop(1, 'transparent');
+      ctx.fillStyle = g; ctx.fillRect(x, y + ts - shoreW, ts, shoreW);
+    } else if (side.dir === 'W') {
+      g = ctx.createLinearGradient(x, y, x + shoreW, y);
+      g.addColorStop(0, shoreColor); g.addColorStop(1, 'transparent');
+      ctx.fillStyle = g; ctx.fillRect(x, y, shoreW, ts);
+    } else {
+      g = ctx.createLinearGradient(x + ts, y, x + ts - shoreW, y);
+      g.addColorStop(0, shoreColor); g.addColorStop(1, 'transparent');
+      ctx.fillStyle = g; ctx.fillRect(x + ts - shoreW, y, shoreW, ts);
+    }
+
+    // Foam particles along shore edge
+    ctx.fillStyle = foamColor;
+    const foamSeed = col * 11 + row * 7;
+    for (let f = 0; f < 4; f++) {
+      let fx, fy;
+      const offset = ((foamSeed + f * 13) % Math.round(ts * 0.8)) + ts * 0.1;
+      if (side.dir === 'N') { fx = x + offset; fy = y + ((foamSeed + f) % Math.round(shoreW * 0.6)); }
+      else if (side.dir === 'S') { fx = x + offset; fy = y + ts - ((foamSeed + f) % Math.round(shoreW * 0.6)); }
+      else if (side.dir === 'W') { fy = y + offset; fx = x + ((foamSeed + f) % Math.round(shoreW * 0.6)); }
+      else { fy = y + offset; fx = x + ts - ((foamSeed + f) % Math.round(shoreW * 0.6)); }
+      ctx.beginPath();
+      ctx.arc(fx, fy, foamDotR, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 }
 
 function drawIslandTile(ctx, x, y, col, row, ts, islandSet) {
-  // Sandy shore base
-  ctx.fillStyle = COLORS.sand;
-  ctx.fillRect(x, y, ts, ts);
-
-  // Water-neighbor detection for organic vegetation edges
+  // Water-neighbor detection
   const hasWN = !islandSet.has(`${col},${row - 1}`);
   const hasWS = !islandSet.has(`${col},${row + 1}`);
   const hasWW = !islandSet.has(`${col - 1},${row}`);
   const hasWE = !islandSet.has(`${col + 1},${row}`);
+  const waterSides = (hasWN ? 1 : 0) + (hasWS ? 1 : 0) + (hasWW ? 1 : 0) + (hasWE ? 1 : 0);
+  const isEdge = waterSides > 0;
 
-  const inset = Math.round(ts * 0.1);
-  const gx = x + (hasWW ? inset + 2 : 0);
-  const gy = y + (hasWN ? inset + 2 : 0);
-  const gw = ts - (hasWW ? inset + 2 : 0) - (hasWE ? inset + 2 : 0);
-  const gh = ts - (hasWN ? inset + 2 : 0) - (hasWS ? inset + 2 : 0);
+  // Layer 1: Beach ring (sandy base on water-facing edges)
+  const beachW = Math.round(ts * 0.15);
+  ctx.fillStyle = COLORS.beachLight;
+  ctx.fillRect(x, y, ts, ts);
 
-  if (gw > 4 && gh > 4) {
-    // Main vegetation layer
-    const greenVar = ((col * 7 + row * 13) % 3 === 0) ? COLORS.green2 : COLORS.green1;
-    ctx.fillStyle = greenVar;
-    roundRect(ctx, gx, gy, gw, gh, Math.round(ts * 0.06));
-    ctx.fill();
-
-    // Darker vegetation patches
-    ctx.fillStyle = COLORS.greenDark;
-    const spotCount = 2 + ((col * 3 + row * 7) % 3);
-    for (let s = 0; s < spotCount; s++) {
-      const sx = gx + ((col * 11 + s * 17) % Math.max(gw - 8, 1)) + 4;
-      const sy = gy + ((row * 13 + s * 23) % Math.max(gh - 8, 1)) + 4;
-      const sr = ts * 0.05 + (s % 2) * ts * 0.02;
-      ctx.beginPath();
-      ctx.arc(sx, sy, sr, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // Tree canopy highlights
-    ctx.fillStyle = COLORS.greenLight;
-    for (let t = 0; t < 3; t++) {
-      const tx = gx + ((col * 7 + t * 19 + row) % Math.max(gw - 6, 1)) + 3;
-      const ty = gy + ((row * 11 + t * 13 + col) % Math.max(gh - 6, 1)) + 3;
-      ctx.beginPath();
-      ctx.arc(tx, ty, ts * 0.03, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
-  // Shore edge gradients (sandy to water)
-  const shoreW = Math.round(ts * 0.1);
+  // Wet sand gradient at waterline edges
   if (hasWN) {
-    const g = ctx.createLinearGradient(x, y, x, y + shoreW);
-    g.addColorStop(0, COLORS.sandDark);
-    g.addColorStop(1, 'transparent');
-    ctx.fillStyle = g;
-    ctx.fillRect(x, y, ts, shoreW);
+    const g = ctx.createLinearGradient(x, y, x, y + beachW);
+    g.addColorStop(0, COLORS.beachWet); g.addColorStop(0.5, COLORS.sandDark); g.addColorStop(1, COLORS.sand);
+    ctx.fillStyle = g; ctx.fillRect(x, y, ts, beachW);
   }
   if (hasWS) {
-    const g = ctx.createLinearGradient(x, y + ts, x, y + ts - shoreW);
-    g.addColorStop(0, COLORS.sandDark);
-    g.addColorStop(1, 'transparent');
-    ctx.fillStyle = g;
-    ctx.fillRect(x, y + ts - shoreW, ts, shoreW);
+    const g = ctx.createLinearGradient(x, y + ts, x, y + ts - beachW);
+    g.addColorStop(0, COLORS.beachWet); g.addColorStop(0.5, COLORS.sandDark); g.addColorStop(1, COLORS.sand);
+    ctx.fillStyle = g; ctx.fillRect(x, y + ts - beachW, ts, beachW);
   }
   if (hasWW) {
-    const g = ctx.createLinearGradient(x, y, x + shoreW, y);
-    g.addColorStop(0, COLORS.sandDark);
-    g.addColorStop(1, 'transparent');
-    ctx.fillStyle = g;
-    ctx.fillRect(x, y, shoreW, ts);
+    const g = ctx.createLinearGradient(x, y, x + beachW, y);
+    g.addColorStop(0, COLORS.beachWet); g.addColorStop(0.5, COLORS.sandDark); g.addColorStop(1, COLORS.sand);
+    ctx.fillStyle = g; ctx.fillRect(x, y, beachW, ts);
   }
   if (hasWE) {
-    const g = ctx.createLinearGradient(x + ts, y, x + ts - shoreW, y);
-    g.addColorStop(0, COLORS.sandDark);
-    g.addColorStop(1, 'transparent');
-    ctx.fillStyle = g;
-    ctx.fillRect(x + ts - shoreW, y, shoreW, ts);
+    const g = ctx.createLinearGradient(x + ts, y, x + ts - beachW, y);
+    g.addColorStop(0, COLORS.beachWet); g.addColorStop(0.5, COLORS.sandDark); g.addColorStop(1, COLORS.sand);
+    ctx.fillStyle = g; ctx.fillRect(x + ts - beachW, y, beachW, ts);
+  }
+
+  // Layer 2: Vegetation — canopy blobs
+  const inset = Math.round(ts * 0.12);
+  const gx = x + (hasWW ? inset + 3 : 1);
+  const gy = y + (hasWN ? inset + 3 : 1);
+  const gw = ts - (hasWW ? inset + 3 : 1) - (hasWE ? inset + 3 : 1);
+  const gh = ts - (hasWN ? inset + 3 : 1) - (hasWS ? inset + 3 : 1);
+
+  if (gw > 6 && gh > 6) {
+    // Base vegetation fill
+    const greenVar = ((col * 7 + row * 13) % 3 === 0) ? COLORS.green2 : COLORS.green1;
+    ctx.fillStyle = greenVar;
+    roundRect(ctx, gx, gy, gw, gh, Math.round(ts * 0.08));
+    ctx.fill();
+
+    // Canopy blobs (overlapping circles for organic feel)
+    const blobCount = 3 + ((col * 3 + row * 5) % 3);
+    for (let b = 0; b < blobCount; b++) {
+      const blobR = ts * 0.08 + ((col * 7 + b * 11 + row) % 5) * ts * 0.015;
+      const bx = gx + ((col * 13 + b * 19 + row * 3) % Math.max(gw - 8, 1)) + 4;
+      const by = gy + ((row * 11 + b * 17 + col * 5) % Math.max(gh - 8, 1)) + 4;
+      const bColor = b % 3 === 0 ? COLORS.greenDark : (b % 3 === 1 ? greenVar : COLORS.greenLight);
+      ctx.fillStyle = bColor;
+      ctx.beginPath();
+      ctx.arc(bx, by, blobR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Layer 5: Flower details (tiny colored dots)
+    const flowerSeed = col * 23 + row * 31;
+    const flowerCount = 1 + (flowerSeed % 3);
+    for (let f = 0; f < flowerCount; f++) {
+      const fx = gx + ((flowerSeed + f * 29) % Math.max(gw - 6, 1)) + 3;
+      const fy = gy + ((flowerSeed + f * 37) % Math.max(gh - 6, 1)) + 3;
+      ctx.fillStyle = f % 2 === 0 ? COLORS.flowerRed : COLORS.flowerYellow;
+      ctx.beginPath();
+      ctx.arc(fx, fy, Math.max(1, ts * 0.018), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Layer 3: Palm trees on edge tiles
+  if (isEdge && ts >= 50) {
+    const palmSeed = col * 17 + row * 29;
+    const palmCount = 1 + (palmSeed % 2);
+    for (let p = 0; p < palmCount; p++) {
+      // Position palm near water edge
+      let px, py;
+      if (hasWN && p === 0) { px = x + ts * 0.3 + (palmSeed % Math.round(ts * 0.4)); py = y + ts * 0.25; }
+      else if (hasWS && p === 0) { px = x + ts * 0.3 + (palmSeed % Math.round(ts * 0.4)); py = y + ts * 0.75; }
+      else if (hasWW) { px = x + ts * 0.25; py = y + ts * 0.3 + (palmSeed % Math.round(ts * 0.4)); }
+      else if (hasWE) { px = x + ts * 0.75; py = y + ts * 0.3 + (palmSeed % Math.round(ts * 0.4)); }
+      else { px = x + ts * 0.5; py = y + ts * 0.5; }
+
+      drawPalmTree(ctx, px, py, ts);
+    }
+  }
+
+  // Layer 4: Cliff edges (dark shadow on water-facing edges with 2+ adjacent water)
+  if (waterSides >= 2) {
+    ctx.strokeStyle = COLORS.cliffBrown;
+    ctx.lineWidth = Math.max(1.5, ts * 0.025);
+    if (hasWN) {
+      ctx.beginPath(); ctx.moveTo(x + 2, y + 1); ctx.lineTo(x + ts - 2, y + 1); ctx.stroke();
+    }
+    if (hasWS) {
+      ctx.beginPath(); ctx.moveTo(x + 2, y + ts - 1); ctx.lineTo(x + ts - 2, y + ts - 1); ctx.stroke();
+    }
+    if (hasWW) {
+      ctx.beginPath(); ctx.moveTo(x + 1, y + 2); ctx.lineTo(x + 1, y + ts - 2); ctx.stroke();
+    }
+    if (hasWE) {
+      ctx.beginPath(); ctx.moveTo(x + ts - 1, y + 2); ctx.lineTo(x + ts - 1, y + ts - 2); ctx.stroke();
+    }
   }
 }
 
+function drawPalmTree(ctx, px, py, ts) {
+  const trunkH = ts * 0.2;
+  const trunkW = Math.max(1.5, ts * 0.03);
+
+  // Curved trunk
+  ctx.strokeStyle = COLORS.palmTrunk;
+  ctx.lineWidth = trunkW;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(px, py + trunkH * 0.3);
+  ctx.quadraticCurveTo(px + ts * 0.03, py, px - ts * 0.01, py - trunkH * 0.5);
+  ctx.stroke();
+
+  // Fronds (3-4 arcs radiating from top)
+  const topX = px - ts * 0.01;
+  const topY = py - trunkH * 0.5;
+  ctx.strokeStyle = COLORS.palmFrond;
+  ctx.lineWidth = Math.max(1, ts * 0.015);
+  const frondAngles = [-2.2, -1.5, -0.8, 0.3];
+  for (let i = 0; i < frondAngles.length; i++) {
+    const angle = frondAngles[i];
+    const frondLen = ts * 0.1 + (i % 2) * ts * 0.03;
+    const endX = topX + Math.cos(angle) * frondLen;
+    const endY = topY + Math.sin(angle) * frondLen;
+    const cpX = topX + Math.cos(angle) * frondLen * 0.5 + (i % 2 ? -1 : 1) * ts * 0.02;
+    const cpY = topY + Math.sin(angle) * frondLen * 0.5 - ts * 0.02;
+    ctx.strokeStyle = i % 2 === 0 ? COLORS.palmFrond : COLORS.palmFrondLight;
+    ctx.beginPath();
+    ctx.moveTo(topX, topY);
+    ctx.quadraticCurveTo(cpX, cpY, endX, endY);
+    ctx.stroke();
+  }
+  ctx.lineCap = 'butt';
+}
+
 function drawMerchantTile(ctx, x, y, col, row, ts, islandSet) {
+  // Sandy base with warmer tone
   ctx.fillStyle = COLORS.merchantSand;
   ctx.fillRect(x, y, ts, ts);
 
+  // Vegetation area
   const inset = Math.round(ts * 0.1);
   ctx.fillStyle = COLORS.merchantGreen;
-  roundRect(ctx, x + inset, y + inset, ts - inset * 2, ts - inset * 2, Math.round(ts * 0.06));
+  roundRect(ctx, x + inset, y + inset, ts - inset * 2, ts - inset * 2, Math.round(ts * 0.08));
   ctx.fill();
 
-  // Drawn barrel icon (replaces emoji)
-  drawBarrelIcon(ctx, x + ts / 2, y + ts / 2, ts * 0.5);
+  // Darker vegetation patches
+  const seed = col * 11 + row * 7;
+  ctx.fillStyle = COLORS.greenDark;
+  for (let i = 0; i < 2; i++) {
+    const sx = x + inset + ((seed + i * 17) % Math.max(ts - inset * 2 - 8, 1)) + 4;
+    const sy = y + inset + ((seed + i * 23) % Math.max(ts - inset * 2 - 8, 1)) + 4;
+    ctx.beginPath();
+    ctx.arc(sx, sy, ts * 0.05, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Market stall
+  drawMarketStall(ctx, x + ts / 2, y + ts / 2, ts);
+}
+
+function drawMarketStall(ctx, cx, cy, ts) {
+  const stallW = ts * 0.35;
+  const stallH = ts * 0.3;
+
+  // Two wooden posts
+  ctx.strokeStyle = COLORS.crateWood;
+  ctx.lineWidth = Math.max(1.5, ts * 0.025);
+  ctx.beginPath();
+  ctx.moveTo(cx - stallW * 0.4, cy + stallH * 0.3);
+  ctx.lineTo(cx - stallW * 0.4, cy - stallH * 0.4);
+  ctx.moveTo(cx + stallW * 0.4, cy + stallH * 0.3);
+  ctx.lineTo(cx + stallW * 0.4, cy - stallH * 0.4);
+  ctx.stroke();
+
+  // Canopy (colored triangle)
+  ctx.fillStyle = COLORS.canopyRed;
+  ctx.beginPath();
+  ctx.moveTo(cx - stallW * 0.5, cy - stallH * 0.25);
+  ctx.lineTo(cx + stallW * 0.5, cy - stallH * 0.25);
+  ctx.lineTo(cx + stallW * 0.55, cy - stallH * 0.55);
+  ctx.lineTo(cx - stallW * 0.55, cy - stallH * 0.55);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+  ctx.lineWidth = 0.5;
+  ctx.stroke();
+
+  // Barrel underneath
+  drawBarrelIcon(ctx, cx, cy + stallH * 0.1, ts * 0.35);
+
+  // Crate beside stall
+  ctx.fillStyle = COLORS.crateWood;
+  const crateS = ts * 0.07;
+  roundRect(ctx, cx + stallW * 0.35, cy + stallH * 0.05, crateS, crateS, 1);
+  ctx.fill();
+  ctx.strokeStyle = '#5a4020';
+  ctx.lineWidth = 0.5;
+  ctx.stroke();
 }
 
 function drawBarrelIcon(ctx, cx, cy, size) {
@@ -386,23 +647,69 @@ function drawPortTile(ctx, x, y, col, row, ts, tile, islands, players) {
   ctx.fillStyle = COLORS.portWater;
   ctx.fillRect(x, y, ts, ts);
 
-  // Dock planks
-  const plankW = Math.round(ts * 0.4);
-  const plankH = Math.max(3, Math.round(ts * 0.06));
-  ctx.fillStyle = COLORS.portDock;
-  ctx.fillRect(x + ts / 2 - plankW / 2, y + ts - plankH * 3, plankW, plankH);
+  // Subtle ripples
+  ctx.strokeStyle = 'rgba(60,140,180,0.06)';
+  ctx.lineWidth = 0.8;
+  for (let i = 0; i < 3; i++) {
+    const ry = y + ts * 0.2 + i * ts * 0.25;
+    ctx.beginPath();
+    ctx.moveTo(x, ry);
+    ctx.quadraticCurveTo(x + ts * 0.5, ry - ts * 0.02, x + ts, ry);
+    ctx.stroke();
+  }
+
+  // Multi-plank dock
+  const plankW = Math.round(ts * 0.45);
+  const plankH = Math.max(3, Math.round(ts * 0.055));
+  const dockX = x + ts / 2 - plankW / 2;
+  const dockBaseY = y + ts - plankH * 6;
+
+  for (let p = 0; p < 4; p++) {
+    const py = dockBaseY + p * (plankH + 1);
+    const pw = plankW - (p % 2) * ts * 0.05;
+    const pColor = p % 2 === 0 ? COLORS.portDock : COLORS.plankDark;
+    ctx.fillStyle = pColor;
+    ctx.fillRect(dockX + (plankW - pw) / 2, py, pw, plankH);
+    // Wood grain
+    ctx.strokeStyle = 'rgba(90,70,40,0.25)';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(dockX + (plankW - pw) / 2 + 2, py + plankH / 2);
+    ctx.lineTo(dockX + (plankW - pw) / 2 + pw - 2, py + plankH / 2);
+    ctx.stroke();
+  }
+
+  // Mooring posts
+  const postW = Math.max(2, ts * 0.04);
+  const postH = Math.max(4, ts * 0.08);
   ctx.fillStyle = COLORS.portDockLight;
-  ctx.fillRect(x + ts / 2 - plankW * 0.3, y + ts - plankH * 5, plankW * 0.6, plankH);
-  // Wood grain lines
-  ctx.strokeStyle = 'rgba(90, 70, 40, 0.3)';
-  ctx.lineWidth = 0.5;
+  ctx.fillRect(dockX - postW, dockBaseY - postH * 0.5, postW, postH + plankH * 2);
+  ctx.fillRect(dockX + plankW, dockBaseY - postH * 0.5, postW, postH + plankH * 2);
+  // Post tops
+  ctx.fillStyle = '#c0a870';
+  ctx.fillRect(dockX - postW - 1, dockBaseY - postH * 0.5 - 1, postW + 2, 2);
+  ctx.fillRect(dockX + plankW - 1, dockBaseY - postH * 0.5 - 1, postW + 2, 2);
+
+  // Rope coil near one post
+  ctx.strokeStyle = COLORS.ropeColor;
+  ctx.lineWidth = Math.max(0.8, ts * 0.012);
+  const ropeX = dockX - postW - ts * 0.04;
+  const ropeY = dockBaseY + plankH;
   ctx.beginPath();
-  ctx.moveTo(x + ts / 2 - plankW / 2 + 2, y + ts - plankH * 3 + plankH / 2);
-  ctx.lineTo(x + ts / 2 + plankW / 2 - 2, y + ts - plankH * 3 + plankH / 2);
+  ctx.arc(ropeX, ropeY, ts * 0.025, 0, Math.PI * 1.5);
   ctx.stroke();
 
-  // Drawn anchor icon (replaces emoji)
-  drawAnchorIcon(ctx, x + ts / 2, y + ts * 0.4, ts * 0.4);
+  // Lantern glow
+  ctx.fillStyle = COLORS.lanternGlow;
+  const lanternGrad = ctx.createRadialGradient(dockX + plankW + postW / 2, dockBaseY - postH * 0.3, 0,
+    dockX + plankW + postW / 2, dockBaseY - postH * 0.3, ts * 0.1);
+  lanternGrad.addColorStop(0, 'rgba(255,200,80,0.3)');
+  lanternGrad.addColorStop(1, 'transparent');
+  ctx.fillStyle = lanternGrad;
+  ctx.fillRect(dockX + plankW - ts * 0.05, dockBaseY - postH - ts * 0.05, ts * 0.15, ts * 0.15);
+
+  // Anchor icon
+  drawAnchorIcon(ctx, x + ts / 2, y + ts * 0.32, ts * 0.38);
 }
 
 function drawAnchorIcon(ctx, cx, cy, size) {
@@ -438,26 +745,108 @@ function drawAnchorIcon(ctx, cx, cy, size) {
   ctx.lineCap = 'butt';
 }
 
-function drawRockTile(ctx, x, y, col, row, ts, islandSet) {
-  ctx.fillStyle = COLORS.rock;
+function drawRockTile(ctx, x, y, col, row, ts, islandSet, tile) {
+  const isBorder = tile?.isBorderObstacle;
+
+  // Sea base underneath (so rock floats on water)
+  const seaBase = (row + col) % 2 === 0 ? COLORS.sea1 : COLORS.seaShallow;
+  ctx.fillStyle = seaBase;
   ctx.fillRect(x, y, ts, ts);
 
-  // Rocky texture spots
-  ctx.fillStyle = COLORS.rockDark;
-  const seed1 = (col * 17 + row * 11) % 15;
-  const seed2 = (col * 23 + row * 7) % 12;
+  // Wave on water background
+  ctx.strokeStyle = 'rgba(100,180,220,0.05)';
+  ctx.lineWidth = 0.8;
+  const wSeed = col * 7 + row * 13;
+  const wY = y + ts * 0.15 + (wSeed % 5);
   ctx.beginPath();
-  ctx.arc(x + ts * 0.25 + seed1 % (ts * 0.2), y + ts * 0.3 + seed2 % (ts * 0.2), ts * 0.08, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.moveTo(x, wY);
+  ctx.quadraticCurveTo(x + ts * 0.5, wY - ts * 0.02, x + ts, wY);
+  ctx.stroke();
+
+  // Irregular rock polygon (6-8 vertices)
+  const seed = (col * 17 + row * 11);
+  const vertCount = 6 + (seed % 3);
+  const rockR = ts * 0.32;
+  const rcx = x + ts / 2;
+  const rcy = y + ts / 2;
+
+  ctx.fillStyle = isBorder ? '#5e5e4e' : COLORS.rock;
   ctx.beginPath();
-  ctx.arc(x + ts * 0.6 + (seed2 % (ts * 0.15)), y + ts * 0.55 + (seed1 % (ts * 0.15)), ts * 0.06, 0, Math.PI * 2);
+  for (let v = 0; v < vertCount; v++) {
+    const angle = (v / vertCount) * Math.PI * 2 - Math.PI / 2;
+    const jitter = 0.7 + ((seed * 7 + v * 13) % 11) / 30;
+    const vr = rockR * jitter;
+    const vx = rcx + Math.cos(angle) * vr;
+    const vy = rcy + Math.sin(angle) * vr;
+    if (v === 0) ctx.moveTo(vx, vy);
+    else ctx.lineTo(vx, vy);
+  }
+  ctx.closePath();
   ctx.fill();
 
-  // Light highlights
+  // Rock outline
+  ctx.strokeStyle = COLORS.rockDark;
+  ctx.lineWidth = Math.max(1, ts * 0.02);
+  ctx.stroke();
+
+  // Dark spots on rock
+  ctx.fillStyle = COLORS.rockDark;
+  const s1x = rcx + ((seed * 3) % Math.round(rockR * 0.5)) - rockR * 0.25;
+  const s1y = rcy + ((seed * 5) % Math.round(rockR * 0.5)) - rockR * 0.25;
+  ctx.beginPath();
+  ctx.arc(s1x, s1y, ts * 0.04, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Light highlight
   ctx.fillStyle = COLORS.rockLight;
   ctx.beginPath();
-  ctx.arc(x + ts * 0.45, y + ts * 0.2, ts * 0.04, 0, Math.PI * 2);
+  ctx.arc(rcx - rockR * 0.15, rcy - rockR * 0.2, ts * 0.035, 0, Math.PI * 2);
   ctx.fill();
+
+  // Coral accents at rock base (2-3 small colored circles)
+  const coralCount = 2 + (seed % 2);
+  for (let c = 0; c < coralCount; c++) {
+    const angle = ((seed + c * 5) % vertCount) / vertCount * Math.PI * 2;
+    const cx = rcx + Math.cos(angle) * rockR * 0.85;
+    const cy = rcy + Math.sin(angle) * rockR * 0.85;
+    ctx.fillStyle = c % 2 === 0 ? COLORS.coralPink : COLORS.coralOrange;
+    ctx.beginPath();
+    ctx.arc(cx, cy, ts * 0.025 + (c % 2) * ts * 0.01, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Seaweed strands (1-2 wavy green lines)
+  ctx.strokeStyle = COLORS.seaweedGreen;
+  ctx.lineWidth = Math.max(1, ts * 0.015);
+  for (let s = 0; s < 1 + (seed % 2); s++) {
+    const angle = ((seed * 3 + s * 7) % vertCount) / vertCount * Math.PI * 2;
+    const sx = rcx + Math.cos(angle) * rockR * 0.7;
+    const sy = rcy + Math.sin(angle) * rockR * 0.7;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.quadraticCurveTo(sx + ts * 0.03, sy + ts * 0.06, sx - ts * 0.01, sy + ts * 0.1);
+    ctx.stroke();
+  }
+
+  // Tide pool on rock surface
+  ctx.fillStyle = COLORS.tidePool;
+  const tpx = rcx + ((seed * 11) % Math.round(rockR * 0.4)) - rockR * 0.2;
+  const tpy = rcy + ((seed * 13) % Math.round(rockR * 0.4));
+  ctx.beginPath();
+  ctx.ellipse(tpx, tpy, ts * 0.03, ts * 0.02, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Border obstacle barnacle texture
+  if (isBorder) {
+    ctx.fillStyle = COLORS.barnacle;
+    for (let b = 0; b < 3; b++) {
+      const bx = rcx + ((seed * 19 + b * 7) % Math.round(rockR * 0.6)) - rockR * 0.3;
+      const by = rcy + ((seed * 23 + b * 11) % Math.round(rockR * 0.6)) - rockR * 0.3;
+      ctx.beginPath();
+      ctx.arc(bx, by, ts * 0.015, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
 }
 
 function drawLandBarrier(ctx, x, y, ts) {
@@ -560,33 +949,53 @@ function drawStorm(ctx, storm, ts, gp) {
     ctx.fillStyle = grad;
     ctx.fillRect(x, y, ts, ts);
 
-    // Cloud puffs
-    ctx.fillStyle = 'rgba(40, 20, 60, 0.12)';
+    // Cloud puffs (5 per tile with size variation)
     const seed = t.col * 7 + t.row * 13;
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 5; i++) {
+      ctx.fillStyle = i < 2 ? COLORS.stormCloud : 'rgba(40, 20, 60, 0.10)';
       const cx = x + ((seed + i * 17) % Math.round(ts * 0.7)) + ts * 0.15;
       const cy = y + ((seed + i * 23) % Math.round(ts * 0.7)) + ts * 0.15;
+      const cr = ts * 0.12 + (i % 3) * ts * 0.06;
       ctx.beginPath();
-      ctx.arc(cx, cy, ts * 0.18 + (i % 2) * ts * 0.08, 0, Math.PI * 2);
+      ctx.arc(cx, cy, cr, 0, Math.PI * 2);
       ctx.fill();
     }
 
-    // Lightning bolt on some tiles
+    // Rain streaks (4-6 diagonal lines)
+    ctx.strokeStyle = COLORS.rainDrop;
+    ctx.lineWidth = 0.8;
+    const rainCount = 4 + (seed % 3);
+    for (let r = 0; r < rainCount; r++) {
+      const rx = x + ((seed + r * 19) % Math.round(ts * 0.85)) + ts * 0.05;
+      const ry = y + ((seed + r * 11) % Math.round(ts * 0.6)) + ts * 0.1;
+      const rainLen = ts * 0.08 + (r % 3) * ts * 0.04;
+      ctx.beginPath();
+      ctx.moveTo(rx, ry);
+      ctx.lineTo(rx - rainLen * 0.2, ry + rainLen);
+      ctx.stroke();
+    }
+
+    // Lightning bolt on some tiles (brighter)
     if ((t.col + t.row) % 3 === 0) {
       drawLightningBolt(ctx, x + ts * 0.3, y + ts * 0.1, x + ts * 0.55, y + ts * 0.85, ts);
     }
   }
 
-  // Dashed border
+  // Storm border with glow
   const minC = Math.min(...storm.tiles.map(t => t.col));
   const maxC = Math.max(...storm.tiles.map(t => t.col));
   const minR = Math.min(...storm.tiles.map(t => t.row));
   const maxR = Math.max(...storm.tiles.map(t => t.row));
+
+  ctx.save();
+  ctx.shadowColor = COLORS.stormBorder;
+  ctx.shadowBlur = 6;
   ctx.strokeStyle = COLORS.stormBorder;
   ctx.lineWidth = 2;
   ctx.setLineDash([ts * 0.1, ts * 0.1]);
   ctx.strokeRect(gp + minC * ts, gp + minR * ts, (maxC - minC + 1) * ts, (maxR - minR + 1) * ts);
   ctx.setLineDash([]);
+  ctx.restore();
 
   // Lightning icon at storm center
   const cx = gp + storm.center.col * ts + ts / 2;
@@ -595,16 +1004,26 @@ function drawStorm(ctx, storm, ts, gp) {
 }
 
 function drawLightningBolt(ctx, x1, y1, x2, y2, ts) {
-  ctx.strokeStyle = 'rgba(180, 150, 255, 0.2)';
-  ctx.lineWidth = Math.max(1, ts * 0.02);
-  const midX = (x1 + x2) / 2 + ts * 0.06;
-  const midY = (y1 + y2) / 2;
+  ctx.save();
+  ctx.shadowColor = 'rgba(180,150,255,0.4)';
+  ctx.shadowBlur = 3;
+  ctx.strokeStyle = 'rgba(180, 150, 255, 0.35)';
+  ctx.lineWidth = Math.max(1.5, ts * 0.025);
+
+  // Multi-segment zigzag
+  const segments = 3;
+  const dx = (x2 - x1) / segments;
+  const dy = (y2 - y1) / segments;
   ctx.beginPath();
   ctx.moveTo(x1, y1);
-  ctx.lineTo(midX - ts * 0.04, midY);
-  ctx.lineTo(midX + ts * 0.04, midY + ts * 0.02);
+  for (let s = 1; s < segments; s++) {
+    const jx = x1 + dx * s + (s % 2 === 0 ? ts * 0.04 : -ts * 0.05);
+    const jy = y1 + dy * s;
+    ctx.lineTo(jx, jy);
+  }
   ctx.lineTo(x2, y2);
   ctx.stroke();
+  ctx.restore();
 }
 
 function drawLightningIcon(ctx, cx, cy, size) {
@@ -768,34 +1187,176 @@ function drawPeg(ctx, x, y, r, fillColor, strokeColor) {
   ctx.stroke();
 }
 
+// ── Wall Barriers ──────────────────────────────────────────────
+
+function drawWalls(ctx, gameState, ts, gp) {
+  const walls = gameState.walls;
+  if (!walls || walls.length === 0) return;
+
+  for (const wall of walls) {
+    const { col1, row1, col2, row2 } = wall;
+    const isVertical = row1 === row2; // Same row, adjacent cols = vertical edge between them
+
+    if (isVertical) {
+      // Vertical wall: between (col1,row1) and (col2,row2) where col2 = col1+1
+      // The wall sits on the vertical line between the two tiles
+      const edgeX = gp + Math.max(col1, col2) * ts; // Right edge of left tile = left edge of right tile
+      const tileY = gp + row1 * ts;
+      drawWallRock(ctx, edgeX, tileY + ts * 0.2, ts * 0.24, ts * 0.6, col1 + row1);
+    } else {
+      // Horizontal wall: between (col1,row1) and (col2,row2) where row2 = row1+1
+      // The wall sits on the horizontal line between the two tiles
+      const tileX = gp + col1 * ts;
+      const edgeY = gp + Math.max(row1, row2) * ts; // Bottom edge of top tile = top edge of bottom tile
+      drawWallRock(ctx, tileX + ts * 0.2, edgeY, ts * 0.6, ts * 0.24, col1 + row1 + 7);
+    }
+  }
+}
+
+function drawWallRock(ctx, x, y, w, h, seed) {
+  ctx.save();
+
+  // Irregular rocky polygon
+  const pts = [];
+  const steps = 8;
+  const cx = x + w / 2, cy = y + h / 2;
+  const rx = w / 2, ry = h / 2;
+  for (let i = 0; i < steps; i++) {
+    const angle = (i / steps) * Math.PI * 2;
+    const jitter = 0.7 + ((seed * 31 + i * 17) % 100) / 100 * 0.3;
+    pts.push({
+      x: cx + Math.cos(angle) * rx * jitter,
+      y: cy + Math.sin(angle) * ry * jitter,
+    });
+  }
+
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x + 1, pts[0].y + 1);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x + 1, pts[i].y + 1);
+  ctx.closePath();
+  ctx.fill();
+
+  // Rock body
+  ctx.fillStyle = COLORS.rock;
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+  ctx.closePath();
+  ctx.fill();
+
+  // Highlights
+  ctx.fillStyle = COLORS.rockLight;
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  ctx.lineTo(pts[1].x, pts[1].y);
+  ctx.lineTo(cx, cy);
+  ctx.closePath();
+  ctx.fill();
+
+  // Dark edge
+  ctx.strokeStyle = COLORS.rockDark;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+  ctx.closePath();
+  ctx.stroke();
+
+  // Coral accent
+  const coralX = cx + ((seed * 13) % 5 - 2) * (w * 0.06);
+  const coralY = cy + ((seed * 7) % 5 - 2) * (h * 0.06);
+  ctx.fillStyle = COLORS.coralPink;
+  ctx.beginPath();
+  ctx.arc(coralX, coralY, Math.min(w, h) * 0.08, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+// ── Compass Rose ──────────────────────────────────────────────
+
+function drawCompassRose(ctx, cx, cy, size) {
+  ctx.save();
+  ctx.globalAlpha = 0.35;
+
+  // 4-point star
+  const outerR = size * 0.4;
+  const innerR = size * 0.15;
+
+  ctx.fillStyle = '#c9a84c';
+  ctx.strokeStyle = '#8b7355';
+  ctx.lineWidth = 1;
+
+  ctx.beginPath();
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2 - Math.PI / 2;
+    const r = i % 2 === 0 ? outerR : innerR;
+    const px = cx + Math.cos(angle) * r;
+    const py = cy + Math.sin(angle) * r;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Center circle
+  ctx.fillStyle = '#8b7355';
+  ctx.beginPath();
+  ctx.arc(cx, cy, size * 0.05, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Cardinal labels
+  const labelSize = Math.max(6, Math.round(size * 0.2));
+  ctx.font = `bold ${labelSize}px serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#c9a84c';
+
+  ctx.fillText('N', cx, cy - outerR - labelSize * 0.7);
+  ctx.fillText('S', cx, cy + outerR + labelSize * 0.7);
+  ctx.fillText('E', cx + outerR + labelSize * 0.6, cy);
+  ctx.fillText('W', cx - outerR - labelSize * 0.6, cy);
+
+  ctx.restore();
+}
+
 // ── Board Edge Vignette ────────────────────────────────────────
 
-function drawBoardEdge(ctx, canvasW, canvasH, gp) {
-  const edgeSize = Math.round(gp * 0.6);
+function drawBoardEdge(ctx, canvasW, canvasH, gp, boardW, boardH) {
+  const edgeSize = Math.round(gp * 0.8);
+
   // Top
   let g = ctx.createLinearGradient(0, 0, 0, edgeSize);
-  g.addColorStop(0, 'rgba(10, 30, 42, 0.7)');
+  g.addColorStop(0, 'rgba(10, 30, 42, 0.85)');
   g.addColorStop(1, 'transparent');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, canvasW, edgeSize);
   // Bottom
   g = ctx.createLinearGradient(0, canvasH, 0, canvasH - edgeSize);
-  g.addColorStop(0, 'rgba(10, 30, 42, 0.7)');
+  g.addColorStop(0, 'rgba(10, 30, 42, 0.85)');
   g.addColorStop(1, 'transparent');
   ctx.fillStyle = g;
   ctx.fillRect(0, canvasH - edgeSize, canvasW, edgeSize);
   // Left
   g = ctx.createLinearGradient(0, 0, edgeSize, 0);
-  g.addColorStop(0, 'rgba(10, 30, 42, 0.7)');
+  g.addColorStop(0, 'rgba(10, 30, 42, 0.85)');
   g.addColorStop(1, 'transparent');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, edgeSize, canvasH);
   // Right
   g = ctx.createLinearGradient(canvasW, 0, canvasW - edgeSize, 0);
-  g.addColorStop(0, 'rgba(10, 30, 42, 0.7)');
+  g.addColorStop(0, 'rgba(10, 30, 42, 0.85)');
   g.addColorStop(1, 'transparent');
   ctx.fillStyle = g;
   ctx.fillRect(canvasW - edgeSize, 0, edgeSize, canvasH);
+
+  // Inner gold border at board boundary
+  ctx.strokeStyle = 'rgba(200, 170, 100, 0.12)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(gp - 1, gp - 1, boardW + 2, boardH + 2);
 }
 
 // ── Utility ────────────────────────────────────────────────────
@@ -832,12 +1393,22 @@ export function canvasToGrid(canvasX, canvasY, layout) {
   return { col, row };
 }
 
+function canonicalWallKey(c1, r1, c2, r2) {
+  if (c1 < c2 || (c1 === c2 && r1 < r2)) return `${c1},${r1}|${c2},${r2}`;
+  return `${c2},${r2}|${c1},${r1}`;
+}
+
 export function getValidMoves(gameState, ship, maxMoves) {
   const { board, totalCols, totalRows, players } = gameState;
   const visited = new Set();
   const queue = [{ ...ship.position, cost: 0 }];
   const valid = [];
   const key = (c, r) => `${c},${r}`;
+
+  // Build wall lookup set
+  const wallSet = new Set((gameState.walls || []).map(
+    w => canonicalWallKey(w.col1, w.row1, w.col2, w.row2)
+  ));
 
   const occupied = new Set();
   for (const p of Object.values(players)) {
@@ -861,6 +1432,8 @@ export function getValidMoves(gameState, ship, maxMoves) {
       const tile = board[nr][nc];
       if (tile.type !== 'sea' && tile.type !== 'port') continue;
       if (occupied.has(k)) continue;
+      // Check for wall between current tile and neighbor
+      if (wallSet.has(canonicalWallKey(cur.col, cur.row, nc, nr))) continue;
       visited.add(k);
       queue.push({ col: nc, row: nr, cost: cur.cost + 1 });
     }

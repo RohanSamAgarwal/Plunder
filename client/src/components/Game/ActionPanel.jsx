@@ -120,8 +120,9 @@ export default function ActionPanel({
   const showBuildSection = isMyTurn && phase === 'gameplay' &&
     (turnPhase === 'draw_resources' || turnPhase === 'roll_for_move' || turnPhase === 'perform_actions');
   const isShipless = (myPlayer.ships?.length || 0) === 0;
-  const showShiplessRoll = isShipless && gameState.settings?.shiplessMode === 'rulebook' && isMyTurn && phase === 'gameplay';
-  const showShiplessAlternatives = isShipless && gameState.settings?.shiplessMode === 'rulebook' && isMyTurn && phase === 'gameplay' && turnPhase === 'perform_actions';
+  const recoveryBlocked = myPlayer.shiplessRecoveryBlocked;
+  const showShiplessRoll = isShipless && !recoveryBlocked && gameState.settings?.shiplessMode === 'rulebook' && isMyTurn && phase === 'gameplay';
+  const showShiplessAlternatives = isShipless && !recoveryBlocked && gameState.settings?.shiplessMode === 'rulebook' && isMyTurn && phase === 'gameplay' && turnPhase === 'perform_actions';
   const canExchangePP = (myPlayer.plunderPointCards || 0) >= 1;
   const canExchangeGold = (resources?.gold || 0) >= 5;
   const hasIslandsToDisown = (myPlayer.ownedIslands?.length || 0) > 0;
@@ -280,6 +281,9 @@ export default function ActionPanel({
         <div className="p-2 space-y-1.5">
           {isShipless && (
             <p className="text-xs text-red-400 px-1">No ships! You're shipless.</p>
+          )}
+          {isShipless && recoveryBlocked && isMyTurn && (
+            <p className="text-[10px] text-amber-400 px-1">Must wait until next turn to roll or trade for a ship. You may still build one with resources.</p>
           )}
           {myPlayer.ships?.map((ship, i) => (
             <div key={ship.id} className="flex items-center justify-between bg-pirate-dark/40 rounded px-3 py-2">
@@ -639,7 +643,9 @@ export default function ActionPanel({
           {/* End Turn */}
           {turnPhase === 'perform_actions' && (
             <button onClick={onEndTurn}
-              className="w-full bg-red-800 hover:bg-red-700 text-white py-2 rounded text-sm transition mt-2">
+              disabled={!!gameState.pendingAttack}
+              className="w-full bg-red-800 hover:bg-red-700 text-white py-2 rounded text-sm transition mt-2
+                         disabled:opacity-40 disabled:cursor-not-allowed">
               End Turn
             </button>
           )}

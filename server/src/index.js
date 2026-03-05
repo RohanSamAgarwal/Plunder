@@ -19,6 +19,7 @@ import {
   merchantBankTrade, canTrade, proposeTreaty, resolveTreaty,
   shiplessRoll, shiplessExchangePP, shiplessExchangeGold,
   shiplessDisownIsland, shiplessChooseResource,
+  submitBribeOffer, resolveAttackBribe, cancelPendingAttackForPlayer,
 } from './gameState.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -293,14 +294,31 @@ io.on('connection', (socket) => {
 
     const state = found.room.gameState;
     const result = attackIsland(state, found.player.id, shipId, islandId);
-    broadcastGameState(found.room);
-    callback?.(result);
+    if (result.error) return callback?.(result);
 
-    io.to(found.room.code).emit(EVENTS.COMBAT_RESULT, {
-      type: 'island',
-      attacker: found.player.name,
-      ...result,
-    });
+    broadcastGameState(found.room);
+
+    if (result.pending) {
+      // Bribe flow: notify defender
+      const defenderPlayer = found.room.players.find(p => p.id === state.pendingAttack.defenderId);
+      if (defenderPlayer) {
+        const defenderSocket = io.sockets.sockets.get(defenderPlayer.socketId);
+        defenderSocket?.emit(EVENTS.ATTACK_BRIBE_PENDING, {
+          attackerId: found.player.id,
+          attackerName: found.player.name,
+          type: 'island',
+          targetId: islandId,
+        });
+      }
+      callback?.({ success: true, pending: true });
+    } else {
+      callback?.(result);
+      io.to(found.room.code).emit(EVENTS.COMBAT_RESULT, {
+        type: 'island',
+        attacker: found.player.name,
+        ...result,
+      });
+    }
   });
 
   socket.on(EVENTS.ATTACK_SHIP, ({ attackerShipId, defenderShipId }, callback) => {
@@ -309,14 +327,89 @@ io.on('connection', (socket) => {
 
     const state = found.room.gameState;
     const result = attackShip(state, found.player.id, attackerShipId, defenderShipId);
+    if (result.error) return callback?.(result);
+
+    broadcastGameState(found.room);
+
+    if (result.pending) {
+      // Bribe flow: notify defender
+      const defenderPlayer = found.room.players.find(p => p.id === state.pendingAttack.defenderId);
+      if (defenderPlayer) {
+        const defenderSocket = io.sockets.sockets.get(defenderPlayer.socketId);
+        defenderSocket?.emit(EVENTS.ATTACK_BRIBE_PENDING, {
+          attackerId: found.player.id,
+          attackerName: found.player.name,
+          type: 'ship',
+          defenderShipId,
+        });
+      }
+      callback?.({ success: true, pending: true });
+    } else {
+      callback?.(result);
+      io.to(found.room.code).emit(EVENTS.COMBAT_RESULT, {
+        type: 'ship',
+        attacker: found.player.name,
+        ...result,
+      });
+    }
+  });
+
+  // --- ATTACK BRIBE FLOW ---
+
+  socket.on(EVENTS.ATTACK_BRIBE_OFFER, ({ offer }, callback) => {
+    const found = getRoomBySocketId(socket.id);
+    if (!found || !found.room.gameState) return callback?.({ error: 'No game' });
+
+    const state = found.room.gameState;
+    const result = submitBribeOffer(state, found.player.id, offer);
+    if (result.error) return callback?.(result);
+
+    broadcastGameState(found.room);
+
+    // Notify attacker with bribe details
+    const attackerPlayer = found.room.players.find(p => p.id === state.pendingAttack.attackerId);
+    if (attackerPlayer) {
+      const attackerSocket = io.sockets.sockets.get(attackerPlayer.socketId);
+      attackerSocket?.emit(EVENTS.ATTACK_BRIBE_DECISION, {
+        defenderId: found.player.id,
+        defenderName: found.player.name,
+        offer: result.offer,
+        bribeMode: state.settings.bribeMode,
+        type: state.pendingAttack.type,
+      });
+    }
+    callback?.({ success: true });
+  });
+
+  socket.on(EVENTS.ATTACK_BRIBE_RESOLVE, ({ decision }, callback) => {
+    const found = getRoomBySocketId(socket.id);
+    if (!found || !found.room.gameState) return callback?.({ error: 'No game' });
+
+    const state = found.room.gameState;
+    const pendingType = state.pendingAttack?.type;
+    const result = resolveAttackBribe(state, found.player.id, decision);
+    if (result.error) return callback?.(result);
+
     broadcastGameState(found.room);
     callback?.(result);
 
-    io.to(found.room.code).emit(EVENTS.COMBAT_RESULT, {
-      type: 'ship',
-      attacker: found.player.name,
-      ...result,
+    // Broadcast outcome to all players
+    io.to(found.room.code).emit(EVENTS.ATTACK_BRIBE_RESOLVED, {
+      outcome: result.outcome,
+      attackerName: found.player.name,
+      combat: result.combat || null,
+      bribe: result.bribe || null,
+      attackCancelled: result.attackCancelled || false,
     });
+
+    // Also emit COMBAT_RESULT if combat happened (for chat log)
+    if (result.combat) {
+      io.to(found.room.code).emit(EVENTS.COMBAT_RESULT, {
+        type: pendingType || 'ship',
+        attacker: found.player.name,
+        ...result.combat,
+      });
+    }
   });
 
   // --- TREASURE ---
@@ -622,6 +715,7 @@ io.on('connection', (socket) => {
           room: getPublicRoomState(result.room),
         });
         if (found.room.gameState) {
+          cancelPendingAttackForPlayer(found.room.gameState, result.player.id);
           broadcastGameState(found.room);
         }
       }

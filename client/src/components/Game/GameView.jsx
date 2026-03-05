@@ -21,7 +21,15 @@ const EVENTS = {
   COLLECT_TREASURE: 'collect-treasure',
 };
 
-export default function GameView({ gameState, playerInfo, messages, pendingTrade, pendingTreaty, roomCode }) {
+const RESOURCE_META = {
+  wood: { label: 'Wood', color: '#8B5E3C' },
+  iron: { label: 'Iron', color: '#9CA3AF' },
+  rum: { label: 'Rum', color: '#C2410C' },
+  gold: { label: 'Gold', color: '#EAB308' },
+};
+const EMPTY_RESOURCES = { wood: 0, iron: 0, rum: 0, gold: 0 };
+
+export default function GameView({ gameState, playerInfo, messages, pendingTrade, pendingTreaty, pendingAttackBribe, attackBribeDecision, roomCode }) {
   const { emit } = useSocketContext();
   const canvasRef = useRef(null);
   const [selectedShip, setSelectedShip] = useState(null);
@@ -29,6 +37,7 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
   const [validMoves, setValidMoves] = useState([]);
   const [notification, setNotification] = useState('');
   const [treasuresFound, setTreasuresFound] = useState([]);
+  const [bribeOffer, setBribeOffer] = useState({ ...EMPTY_RESOURCES });
 
   // Dynamic layout calculation
   const [layout, setLayout] = useState(() =>
@@ -160,7 +169,10 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
         defenderShipId: enemyShip.id,
       }).then(result => {
         if (result?.error) notify(result.error);
-        else {
+        else if (result?.pending) {
+          notify('Attack initiated! Waiting for defender...');
+          setSelectedShip(null);
+        } else {
           notify(result.attackerWon ? 'You won the battle!' : 'You lost the battle!');
           setSelectedShip(null);
         }
@@ -178,7 +190,10 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
           islandId: island.id,
         }).then(result => {
           if (result?.error) notify(result.error);
-          else {
+          else if (result?.pending) {
+            notify('Attack initiated! Waiting for defender...');
+            setSelectedShip(null);
+          } else {
             notify(result.won ? 'Island conquered!' : 'Attack failed!');
             setSelectedShip(null);
           }
@@ -239,6 +254,33 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
   function handleDeclineTreasure(tokenId) {
     setTreasuresFound(prev => prev.filter(t => t.id !== tokenId));
   }
+
+  async function handleBribeOffer() {
+    const total = Object.values(bribeOffer).reduce((s, v) => s + v, 0);
+    await emit('attack-bribe-offer', { offer: total > 0 ? bribeOffer : null });
+    setBribeOffer({ ...EMPTY_RESOURCES });
+  }
+
+  async function handleBribeDecline() {
+    await emit('attack-bribe-offer', { offer: null });
+    setBribeOffer({ ...EMPTY_RESOURCES });
+  }
+
+  async function handleBribeResolve(decision) {
+    const result = await emit('attack-bribe-resolve', { decision });
+    if (result?.error) notify(result.error);
+    else if (result?.combat) {
+      if (result.combat.attackerWon !== undefined) {
+        notify(result.combat.attackerWon ? 'You won the battle!' : 'You lost the battle!');
+      } else {
+        notify(result.combat.won ? 'Island conquered!' : 'Attack failed!');
+      }
+    } else if (result?.attackCancelled) {
+      notify('Attack cancelled.');
+    }
+  }
+
+  const myResources = myPlayer?.resources || {};
 
   if (!gameState) return <div className="text-pirate-tan p-4">Loading game...</div>;
 
@@ -331,6 +373,89 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
               className="flex-1 bg-red-600 text-white py-1.5 rounded text-sm hover:bg-red-500"
             >
               Decline
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Defender Bribe Popup ═══ */}
+      {pendingAttackBribe && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50
+                        bg-pirate-brown border border-red-500/50 p-4 rounded-lg shadow-lg max-w-sm w-80">
+          <h3 className="text-red-400 font-pirate text-lg mb-2">Under Attack!</h3>
+          <p className="text-sm text-pirate-tan mb-3">
+            <strong className="text-white">{pendingAttackBribe.attackerName}</strong> is attacking your {pendingAttackBribe.type === 'ship' ? 'ship' : 'island'}! Offer a bribe?
+          </p>
+          <div className="grid grid-cols-4 gap-1 mb-2">
+            {Object.entries(RESOURCE_META).map(([r, meta]) => (
+              <div key={r} className="text-center">
+                <div className="text-[10px] font-bold" style={{ color: meta.color }}>{meta.label}</div>
+                <div className="text-[10px] text-pirate-tan/50 mb-0.5">({myResources[r] || 0})</div>
+                <input type="number" min="0" max={myResources[r] || 0} value={bribeOffer[r]}
+                  onChange={(e) => setBribeOffer(prev => ({ ...prev, [r]: Math.min(parseInt(e.target.value) || 0, myResources[r] || 0) }))}
+                  className="w-full bg-pirate-dark border border-pirate-tan/20 rounded text-center text-xs py-0.5 text-white" />
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={handleBribeOffer}
+              disabled={Object.values(bribeOffer).reduce((s, v) => s + v, 0) === 0}
+              className="flex-1 bg-amber-600 hover:bg-amber-500 text-white py-1.5 rounded text-sm font-bold
+                         disabled:opacity-40 disabled:cursor-not-allowed transition">
+              Offer Bribe
+            </button>
+            <button onClick={handleBribeDecline}
+              className="flex-1 bg-gray-600 hover:bg-gray-500 text-white py-1.5 rounded text-sm transition">
+              Decline
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Attacker Bribe Decision Popup ═══ */}
+      {attackBribeDecision && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50
+                        bg-pirate-brown border border-pirate-gold/50 p-4 rounded-lg shadow-lg max-w-sm w-80">
+          <h3 className="text-pirate-gold font-pirate text-lg mb-2">Bribe Offered</h3>
+          {attackBribeDecision.offer ? (
+            <>
+              <p className="text-sm text-pirate-tan mb-2">
+                <strong className="text-white">{attackBribeDecision.defenderName}</strong> offers a bribe:
+              </p>
+              <div className="grid grid-cols-4 gap-1 mb-3">
+                {Object.entries(attackBribeDecision.offer).filter(([, v]) => v > 0).map(([r, v]) => (
+                  <div key={r} className="text-center bg-pirate-dark/50 rounded p-1.5">
+                    <div className="text-[10px] font-bold" style={{ color: RESOURCE_META[r]?.color }}>{RESOURCE_META[r]?.label}</div>
+                    <div className="text-sm font-bold text-green-400">+{v}</div>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-pirate-tan mb-3">
+              <strong className="text-white">{attackBribeDecision.defenderName}</strong> declined to offer a bribe.
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            {attackBribeDecision.offer && (
+              <button onClick={() => handleBribeResolve('accept')}
+                className="flex-1 bg-green-700 hover:bg-green-600 text-white py-1.5 rounded text-xs font-bold transition min-w-[100px]">
+                Accept Bribe (No Attack)
+              </button>
+            )}
+            {attackBribeDecision.offer && attackBribeDecision.bribeMode === 'ruthless' && (
+              <button onClick={() => handleBribeResolve('accept_and_attack')}
+                className="flex-1 bg-orange-700 hover:bg-orange-600 text-white py-1.5 rounded text-xs font-bold transition min-w-[100px]">
+                Accept Bribe + Attack
+              </button>
+            )}
+            <button onClick={() => handleBribeResolve('reject')}
+              className="flex-1 bg-red-700 hover:bg-red-600 text-white py-1.5 rounded text-xs font-bold transition min-w-[100px]">
+              {attackBribeDecision.offer ? 'Reject + Attack' : 'Attack'}
+            </button>
+            <button onClick={() => handleBribeResolve('cancel')}
+              className="flex-1 bg-gray-600 hover:bg-gray-500 text-white py-1.5 rounded text-xs transition min-w-[100px]">
+              Cancel Attack
             </button>
           </div>
         </div>

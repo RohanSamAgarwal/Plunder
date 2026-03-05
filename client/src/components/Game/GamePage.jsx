@@ -23,6 +23,9 @@ const EVENTS = {
   TREASURE_COLLECTED: 'treasure-collected',
   TREATY_PROPOSED: 'treaty-proposed',
   TREATY_RESOLVED: 'treaty-resolved',
+  ATTACK_BRIBE_PENDING: 'attack-bribe-pending',
+  ATTACK_BRIBE_DECISION: 'attack-bribe-decision',
+  ATTACK_BRIBE_RESOLVED: 'attack-bribe-resolved',
 };
 
 // localStorage helpers for session persistence
@@ -47,6 +50,8 @@ export default function GamePage() {
   const [messages, setMessages] = useState([]);
   const [pendingTrade, setPendingTrade] = useState(null);
   const [pendingTreaty, setPendingTreaty] = useState(null);
+  const [pendingAttackBribe, setPendingAttackBribe] = useState(null);
+  const [attackBribeDecision, setAttackBribeDecision] = useState(null);
   const [needsJoin, setNeedsJoin] = useState(false);
   const [joinName, setJoinName] = useState('');
   const [error, setError] = useState('');
@@ -112,6 +117,8 @@ export default function GamePage() {
         // Clear pending modals on turn end
         setPendingTrade(null);
         setPendingTreaty(null);
+        setPendingAttackBribe(null);
+        setAttackBribeDecision(null);
       }),
       on(EVENTS.DIE_ROLLED, ({ playerId, roll, stormMoved }) => {
         if (stormMoved) addSystemMessage('The storm has moved!');
@@ -138,6 +145,26 @@ export default function GamePage() {
       on(EVENTS.TREATY_RESOLVED, ({ accepted, proposerId, targetId }) => {
         setPendingTreaty(null);
         addSystemMessage(accepted ? 'Treaty agreed! No attacks this turn.' : 'Treaty declined.');
+      }),
+      on(EVENTS.ATTACK_BRIBE_PENDING, (data) => {
+        setPendingAttackBribe(data);
+      }),
+      on(EVENTS.ATTACK_BRIBE_DECISION, (data) => {
+        setAttackBribeDecision(data);
+        setPendingAttackBribe(null);
+      }),
+      on(EVENTS.ATTACK_BRIBE_RESOLVED, (data) => {
+        setPendingAttackBribe(null);
+        setAttackBribeDecision(null);
+        if (data.attackCancelled && data.bribe) {
+          addSystemMessage(`${data.attackerName} accepted a bribe and cancelled the attack.`);
+        } else if (data.attackCancelled) {
+          addSystemMessage(`${data.attackerName} cancelled the attack.`);
+        } else if (data.outcome === 'bribe_accepted_and_attacked') {
+          addSystemMessage(`${data.attackerName} accepted the bribe but attacked anyway!`);
+        } else if (data.outcome === 'bribe_rejected') {
+          addSystemMessage(`${data.attackerName} rejected the bribe and attacked!`);
+        }
       }),
     ];
 
@@ -242,6 +269,8 @@ export default function GamePage() {
       messages={messages}
       pendingTrade={pendingTrade}
       pendingTreaty={pendingTreaty}
+      pendingAttackBribe={pendingAttackBribe}
+      attackBribeDecision={attackBribeDecision}
       roomCode={code}
     />
   );

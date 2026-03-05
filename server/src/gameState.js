@@ -3,7 +3,7 @@ import { v4 as uuid } from 'uuid';
 import {
   GAME_PHASES, TURN_PHASES, INITIAL_LIFE_PEGS, WIN_POINTS,
   STORM_SIZE, BUILD_COSTS, RESOURCE_TYPES, TILE_TYPES, SHIPLESS_MODES,
-  MAX_CANNONS, MAX_MASTS, MAX_LIFE_PEGS,
+  MAX_CANNONS, MAX_MASTS, MAX_LIFE_PEGS, BRIBE_MODES,
 } from '../../shared/constants.js';
 import { generateBoard, getStartingIslands } from './board.js';
 import { createResourceDeck, createTreasureDeck, drawFromDeck } from './decks.js';
@@ -18,6 +18,8 @@ export function createGameState(players, playerCount, settings = {}) {
     totalCols: boardData.totalCols,
     totalRows: boardData.totalRows,
     panelLayout: boardData.panelLayout,
+    walls: boardData.walls || [],
+    wallSet: buildWallSet(boardData.walls || []),
 
     players: {},
     turnOrder: [],
@@ -41,6 +43,7 @@ export function createGameState(players, playerCount, settings = {}) {
     pendingTrade: null,
     pendingTreasure: null, // treasure card awaiting resolution (steal choice, storm discard)
     pendingStormCost: null, // { playerId, amount } — awaiting player choice on which resources to discard for storm entry/exit
+    pendingAttack: null, // { type, attackerId, defenderId, attackerShipId, targetId, bribeOffer }
     treaties: [], // active treaties: [{ player1, player2, turnNumber }]
     combatLog: [],
     attackedThisTurn: {}, // { [shipId]: Set([targetId1, targetId2]) } — prevents same ship attacking same target twice per turn
@@ -49,6 +52,7 @@ export function createGameState(players, playerCount, settings = {}) {
     // Game settings (configurable in lobby)
     settings: {
       shiplessMode: settings.shiplessMode || SHIPLESS_MODES.RULEBOOK,
+      bribeMode: settings.bribeMode || BRIBE_MODES.NONE,
     },
   };
 
@@ -140,6 +144,24 @@ function isIslandFullyStormBlocked(state, islandId) {
   if (!island || !island.port) return false;
   // Check if the island's port is in the storm
   return isInStorm(state, island.port);
+}
+
+// ── Wall Barrier Helpers ───────────────────────────────────────
+
+function wallKey(col1, row1, col2, row2) {
+  if (col1 < col2 || (col1 === col2 && row1 < row2)) {
+    return `${col1},${row1}|${col2},${row2}`;
+  }
+  return `${col2},${row2}|${col1},${row1}`;
+}
+
+function buildWallSet(walls) {
+  return new Set(walls.map(w => wallKey(w.col1, w.row1, w.col2, w.row2)));
+}
+
+function hasWallBetween(state, posA, posB) {
+  if (!state.wallSet || state.wallSet.size === 0) return false;
+  return state.wallSet.has(wallKey(posA.col, posA.row, posB.col, posB.row));
 }
 
 // Rulebook: cannot collect treasure through a land barrier
@@ -339,6 +361,7 @@ export function shiplessChooseResource(state, playerId, resourceType) {
 export function shiplessRoll(state, playerId) {
   const player = state.players[playerId];
   if (player.ships.length > 0) return { error: 'You have ships' };
+  if (player.shiplessRecoveryBlocked) return { error: 'Cannot recover a ship this turn — wait until your next turn' };
   if (state.settings.shiplessMode !== SHIPLESS_MODES.RULEBOOK) {
     return { error: 'Shipless roll not available in this mode' };
   }
@@ -351,6 +374,8 @@ export function shiplessRoll(state, playerId) {
     const placement = findShipPlacement(state, player);
     if (placement) {
       const ship = createShip(playerId, placement);
+      ship.builtThisTurn = true;
+      ship.doneForTurn = true;
       player.ships.push(ship);
       return { success: true, die1, die2, doubles: true, gotShip: true };
     }
@@ -365,6 +390,7 @@ export function shiplessRoll(state, playerId) {
 export function shiplessExchangePP(state, playerId) {
   const player = state.players[playerId];
   if (player.ships.length > 0) return { error: 'You have ships' };
+  if (player.shiplessRecoveryBlocked) return { error: 'Cannot recover a ship this turn — wait until your next turn' };
   if (player.plunderPointCards < 1) return { error: 'Not enough Plunder Point cards' };
 
   const placement = findShipPlacement(state, player);
@@ -372,6 +398,8 @@ export function shiplessExchangePP(state, playerId) {
 
   player.plunderPointCards--;
   const ship = createShip(playerId, placement);
+  ship.builtThisTurn = true;
+  ship.doneForTurn = true;
   player.ships.push(ship);
   return { success: true, ship, method: 'pp_exchange' };
 }
@@ -380,6 +408,7 @@ export function shiplessExchangePP(state, playerId) {
 export function shiplessExchangeGold(state, playerId) {
   const player = state.players[playerId];
   if (player.ships.length > 0) return { error: 'You have ships' };
+  if (player.shiplessRecoveryBlocked) return { error: 'Cannot recover a ship this turn — wait until your next turn' };
   if (player.resources.gold < 5) return { error: 'Need 5 gold' };
 
   const placement = findShipPlacement(state, player);
@@ -387,6 +416,8 @@ export function shiplessExchangeGold(state, playerId) {
 
   player.resources.gold -= 5;
   const ship = createShip(playerId, placement);
+  ship.builtThisTurn = true;
+  ship.doneForTurn = true;
   player.ships.push(ship);
   return { success: true, ship, method: 'gold_exchange' };
 }
@@ -395,6 +426,7 @@ export function shiplessExchangeGold(state, playerId) {
 export function shiplessDisownIsland(state, playerId, islandId) {
   const player = state.players[playerId];
   if (player.ships.length > 0) return { error: 'You have ships' };
+  if (player.shiplessRecoveryBlocked) return { error: 'Cannot recover a ship this turn — wait until your next turn' };
   if (!player.ownedIslands.includes(islandId)) return { error: 'You do not own this island' };
 
   const island = state.islands[islandId];
@@ -408,6 +440,8 @@ export function shiplessDisownIsland(state, playerId, islandId) {
   if (!placement) return { error: 'No available placement for new ship' };
 
   const ship = createShip(playerId, placement);
+  ship.builtThisTurn = true;
+  ship.doneForTurn = true;
   player.ships.push(ship);
   return { success: true, ship, method: 'disown_island', disownedIsland: islandId };
 }
@@ -481,6 +515,7 @@ export function rollSailingDie(state) {
 
 export function moveShip(state, playerId, shipId, path) {
   if (state.pendingStormCost) return { error: 'Must resolve storm cost first' };
+  if (state.pendingAttack) return { error: 'Must resolve pending attack first' };
 
   const player = state.players[playerId];
   const ship = player.ships.find(s => s.id === shipId);
@@ -502,6 +537,11 @@ export function moveShip(state, playerId, shipId, path) {
     if (!tile) return { error: 'Out of bounds' };
     if (tile.type !== TILE_TYPES.SEA && tile.type !== TILE_TYPES.PORT) {
       return { error: 'Cannot move through islands' };
+    }
+
+    // Check for wall barriers between current position and next step
+    if (hasWallBetween(state, current, step)) {
+      return { error: 'Path blocked by wall' };
     }
 
     const occupied = isOccupied(state, step, shipId);
@@ -580,8 +620,9 @@ export function collectTreasure(state, playerId, tokenId) {
       const dx = Math.abs(s.position.col - token.col);
       const dy = Math.abs(s.position.row - token.row);
       if (dx + dy !== 1) return false;
-      // Check for land barrier between ship and treasure
+      // Check for land barrier or wall between ship and treasure
       if (hasLandBarrierBetween(state, s.position, token)) return false;
+      if (hasWallBetween(state, s.position, token)) return false;
       return true;
     });
     if (!adjacentShip) return { error: 'No ship on or adjacent to the treasure (or blocked by land barrier)' };
@@ -852,11 +893,9 @@ export function buildItem(state, playerId, buildType, targetShipId) {
       return { error: 'No available port or adjacent space for new ship' };
     }
     const newShip = createShip(playerId, placementPos);
-    // Rulebook: ship built after rolling cannot move this turn
-    if (state.hasRolled) {
-      newShip.builtThisTurn = true;
-      newShip.doneForTurn = true;
-    }
+    // Rulebook: new ships cannot move or attack the turn they are acquired
+    newShip.builtThisTurn = true;
+    newShip.doneForTurn = true;
     player.ships.push(newShip);
     return { success: true, ship: newShip, placedAtPort };
   }
@@ -908,12 +947,16 @@ function refundAndError(player, cost, message) {
 
 // === COMBAT ===
 
-export function attackIsland(state, playerId, shipId, islandId) {
+// --- Validation helpers (shared by instant and bribe flows) ---
+
+function validateIslandAttack(state, playerId, shipId, islandId) {
+  if (state.pendingAttack) return { error: 'Another attack is pending' };
   const player = state.players[playerId];
   const ship = player.ships.find(s => s.id === shipId);
   const island = state.islands[islandId];
 
   if (!ship || !island) return { error: 'Invalid ship or island' };
+  if (ship.doneForTurn) return { error: 'This ship cannot attack this turn' };
   if (island.type !== 'resource') return { error: 'Cannot attack this island' };
   if (island.owner === playerId) return { error: 'You already own this island' };
 
@@ -921,7 +964,6 @@ export function attackIsland(state, playerId, shipId, islandId) {
     return { error: 'Must be in the island port to attack' };
   }
 
-  // Rulebook: cannot attack across storm border (one in, one out)
   if (island.tiles?.length > 0 && isAcrossStormBorder(state, ship.position, island.tiles[0])) {
     return { error: 'Cannot attack across the storm border' };
   }
@@ -930,54 +972,19 @@ export function attackIsland(state, playerId, shipId, islandId) {
     return { error: 'You have a treaty with this player this turn' };
   }
 
-  // Rulebook: same ship cannot attack same island twice per turn
   if (state.attackedThisTurn[shipId]?.has(islandId)) {
     return { error: 'This ship already attacked this island this turn' };
   }
 
-  const attackRoll = rollDie(6) + ship.cannons;
-  const defenseRoll = rollDie(6) + island.skulls;
-  const attackerWins = attackRoll >= defenseRoll;
-  ship.doneForTurn = true;
-
-  // Track attack cooldown
-  if (!state.attackedThisTurn[shipId]) state.attackedThisTurn[shipId] = new Set();
-  state.attackedThisTurn[shipId].add(islandId);
-
-  if (attackerWins) {
-    if (island.owner) {
-      const prevOwner = state.players[island.owner];
-      prevOwner.ownedIslands = prevOwner.ownedIslands.filter(id => id !== islandId);
-    }
-    island.owner = playerId;
-    player.ownedIslands.push(islandId);
-    return { success: true, won: true, attackRoll, defenseRoll };
-  } else {
-    ship.lifePegs--;
-    const sunk = ship.lifePegs <= 0;
-    let ownerGotPP = false;
-    if (sunk) {
-      player.ships = player.ships.filter(s => s.id !== shipId);
-      // Rulebook: if attacker sinks at an owned island, the island owner gains a PP
-      if (island.owner && island.owner !== playerId) {
-        const islandOwner = state.players[island.owner];
-        islandOwner.plunderPointCards++;
-        ownerGotPP = true;
-        const total = calculatePlunderPoints(state, island.owner);
-        if (total >= WIN_POINTS) {
-          state.phase = GAME_PHASES.GAME_OVER;
-          state.winner = island.owner;
-        }
-      }
-    }
-    return { success: true, won: false, attackRoll, defenseRoll, sunk, ownerGotPP };
-  }
+  return { valid: true, player, ship, island };
 }
 
-export function attackShip(state, attackerId, attackerShipId, defenderShipId) {
+function validateShipAttack(state, attackerId, attackerShipId, defenderShipId) {
+  if (state.pendingAttack) return { error: 'Another attack is pending' };
   const attacker = state.players[attackerId];
   const attackerShip = attacker.ships.find(s => s.id === attackerShipId);
   if (!attackerShip) return { error: 'Attacker ship not found' };
+  if (attackerShip.doneForTurn) return { error: 'This ship cannot attack this turn' };
 
   let defender = null;
   let defenderShip = null;
@@ -995,26 +1002,82 @@ export function attackShip(state, attackerId, attackerShipId, defenderShipId) {
   const dy = Math.abs(attackerShip.position.row - defenderShip.position.row);
   if (dx + dy !== 1) return { error: 'Must be adjacent to attack' };
 
-  // Rulebook: cannot attack through a land barrier
   if (hasLandBarrierBetween(state, attackerShip.position, defenderShip.position)) {
     return { error: 'Cannot attack through a land barrier' };
   }
 
-  // Rulebook: cannot attack across storm border
   if (isAcrossStormBorder(state, attackerShip.position, defenderShip.position)) {
     return { error: 'Cannot attack across the storm border' };
   }
 
-  // Rulebook: same ship cannot attack same target ship twice per turn
   if (state.attackedThisTurn[attackerShipId]?.has(defenderShipId)) {
     return { error: 'This ship already attacked this target this turn' };
+  }
+
+  return { valid: true, attacker, attackerShip, defender, defenderShip };
+}
+
+// --- Combat execution helpers ---
+
+function executeIslandCombat(state, playerId, shipId, islandId) {
+  const player = state.players[playerId];
+  const ship = player.ships.find(s => s.id === shipId);
+  const island = state.islands[islandId];
+
+  const attackRoll = rollDie(6) + ship.cannons;
+  const defenseRoll = rollDie(6) + island.skulls;
+  const attackerWins = attackRoll >= defenseRoll;
+  ship.doneForTurn = true;
+
+  if (!state.attackedThisTurn[shipId]) state.attackedThisTurn[shipId] = new Set();
+  state.attackedThisTurn[shipId].add(islandId);
+
+  if (attackerWins) {
+    if (island.owner) {
+      const prevOwner = state.players[island.owner];
+      prevOwner.ownedIslands = prevOwner.ownedIslands.filter(id => id !== islandId);
+    }
+    island.owner = playerId;
+    player.ownedIslands.push(islandId);
+    return { success: true, won: true, attackRoll, defenseRoll };
+  } else {
+    ship.lifePegs--;
+    const sunk = ship.lifePegs <= 0;
+    let ownerGotPP = false;
+    if (sunk) {
+      player.ships = player.ships.filter(s => s.id !== shipId);
+      if (player.ships.length === 0) {
+        player.shiplessRecoveryBlocked = true;
+      }
+      if (island.owner && island.owner !== playerId) {
+        const islandOwner = state.players[island.owner];
+        islandOwner.plunderPointCards++;
+        ownerGotPP = true;
+        const total = calculatePlunderPoints(state, island.owner);
+        if (total >= WIN_POINTS) {
+          state.phase = GAME_PHASES.GAME_OVER;
+          state.winner = island.owner;
+        }
+      }
+    }
+    return { success: true, won: false, attackRoll, defenseRoll, sunk, ownerGotPP };
+  }
+}
+
+function executeShipCombat(state, attackerId, attackerShipId, defenderShipId) {
+  const attacker = state.players[attackerId];
+  const attackerShip = attacker.ships.find(s => s.id === attackerShipId);
+  let defender = null;
+  let defenderShip = null;
+  for (const p of Object.values(state.players)) {
+    const s = p.ships.find(s => s.id === defenderShipId);
+    if (s) { defender = p; defenderShip = s; break; }
   }
 
   const attackRoll = rollDie(6) + attackerShip.cannons;
   const defenseRoll = rollDie(6) + defenderShip.cannons;
   const attackerWins = attackRoll >= defenseRoll;
 
-  // Track attack cooldown
   if (!state.attackedThisTurn[attackerShipId]) state.attackedThisTurn[attackerShipId] = new Set();
   state.attackedThisTurn[attackerShipId].add(defenderShipId);
 
@@ -1023,6 +1086,9 @@ export function attackShip(state, attackerId, attackerShipId, defenderShipId) {
     const sunk = defenderShip.lifePegs <= 0;
     if (sunk) {
       defender.ships = defender.ships.filter(s => s.id !== defenderShipId);
+      if (defender.ships.length === 0) {
+        defender.shiplessRecoveryBlocked = true;
+      }
       attacker.plunderPointCards++;
       const total = calculatePlunderPoints(state, attackerId);
       if (total >= WIN_POINTS) {
@@ -1036,6 +1102,9 @@ export function attackShip(state, attackerId, attackerShipId, defenderShipId) {
     const sunk = attackerShip.lifePegs <= 0;
     if (sunk) {
       attacker.ships = attacker.ships.filter(s => s.id !== attackerShipId);
+      if (attacker.ships.length === 0) {
+        attacker.shiplessRecoveryBlocked = true;
+      }
       defender.plunderPointCards++;
       const total = calculatePlunderPoints(state, defender.id);
       if (total >= WIN_POINTS) {
@@ -1044,6 +1113,136 @@ export function attackShip(state, attackerId, attackerShipId, defenderShipId) {
       }
     }
     return { success: true, attackerWon: false, attackRoll, defenseRoll, sunk };
+  }
+}
+
+// --- Public attack functions (validate → instant or pending) ---
+
+export function attackIsland(state, playerId, shipId, islandId) {
+  const v = validateIslandAttack(state, playerId, shipId, islandId);
+  if (v.error) return v;
+
+  // Unowned islands or bribe mode off: instant combat
+  if (!v.island.owner || state.settings.bribeMode === BRIBE_MODES.NONE) {
+    return executeIslandCombat(state, playerId, shipId, islandId);
+  }
+
+  // Create pending attack for bribe flow
+  state.pendingAttack = {
+    type: 'island',
+    attackerId: playerId,
+    defenderId: v.island.owner,
+    attackerShipId: shipId,
+    targetId: islandId,
+    bribeOffer: undefined, // undefined = defender hasn't responded yet
+  };
+  return { success: true, pending: true };
+}
+
+export function attackShip(state, attackerId, attackerShipId, defenderShipId) {
+  const v = validateShipAttack(state, attackerId, attackerShipId, defenderShipId);
+  if (v.error) return v;
+
+  // Bribe mode off: instant combat
+  if (state.settings.bribeMode === BRIBE_MODES.NONE) {
+    return executeShipCombat(state, attackerId, attackerShipId, defenderShipId);
+  }
+
+  // Create pending attack for bribe flow
+  state.pendingAttack = {
+    type: 'ship',
+    attackerId,
+    defenderId: v.defender.id,
+    attackerShipId,
+    targetId: defenderShipId,
+    bribeOffer: undefined,
+  };
+  return { success: true, pending: true };
+}
+
+// --- Bribe flow functions ---
+
+export function submitBribeOffer(state, defenderId, offer) {
+  const pending = state.pendingAttack;
+  if (!pending) return { error: 'No pending attack' };
+  if (pending.defenderId !== defenderId) return { error: 'Not the defender' };
+  if (pending.bribeOffer !== undefined) return { error: 'Already responded' };
+
+  if (offer) {
+    const defender = state.players[defenderId];
+    for (const [res, amt] of Object.entries(offer)) {
+      if (amt < 0) return { error: 'Invalid amount' };
+      if ((defender.resources[res] || 0) < amt) return { error: `Not enough ${res}` };
+    }
+    const total = Object.values(offer).reduce((s, v) => s + v, 0);
+    if (total === 0) offer = null; // zero-total = no bribe
+  }
+
+  pending.bribeOffer = offer; // null = declined, object = bribe offered
+  return { success: true, offer };
+}
+
+export function resolveAttackBribe(state, attackerId, decision) {
+  const pending = state.pendingAttack;
+  if (!pending) return { error: 'No pending attack' };
+  if (pending.attackerId !== attackerId) return { error: 'Not the attacker' };
+  if (pending.bribeOffer === undefined) return { error: 'Defender has not responded yet' };
+
+  const attacker = state.players[attackerId];
+  const defender = state.players[pending.defenderId];
+  const bribe = pending.bribeOffer;
+  const bribeMode = state.settings.bribeMode;
+
+  switch (decision) {
+    case 'accept': {
+      // Accept bribe, cancel attack (both modes)
+      if (!bribe) return { error: 'No bribe to accept' };
+      transferBribeResources(defender, attacker, bribe);
+      state.pendingAttack = null;
+      return { success: true, outcome: 'bribe_accepted', bribe, attackCancelled: true };
+    }
+    case 'accept_and_attack': {
+      // Ruthless only: accept bribe AND still attack
+      if (bribeMode !== BRIBE_MODES.RUTHLESS) return { error: 'Not allowed in honor mode' };
+      if (!bribe) return { error: 'No bribe to accept' };
+      transferBribeResources(defender, attacker, bribe);
+      const combat = pending.type === 'ship'
+        ? executeShipCombat(state, pending.attackerId, pending.attackerShipId, pending.targetId)
+        : executeIslandCombat(state, pending.attackerId, pending.attackerShipId, pending.targetId);
+      state.pendingAttack = null;
+      return { success: true, outcome: 'bribe_accepted_and_attacked', bribe, combat };
+    }
+    case 'reject': {
+      // Reject bribe (or no bribe), proceed with attack
+      const combat = pending.type === 'ship'
+        ? executeShipCombat(state, pending.attackerId, pending.attackerShipId, pending.targetId)
+        : executeIslandCombat(state, pending.attackerId, pending.attackerShipId, pending.targetId);
+      state.pendingAttack = null;
+      return { success: true, outcome: 'bribe_rejected', combat };
+    }
+    case 'cancel': {
+      // Cancel attack entirely
+      state.pendingAttack = null;
+      return { success: true, outcome: 'attack_cancelled', attackCancelled: true };
+    }
+    default:
+      return { error: 'Invalid decision' };
+  }
+}
+
+function transferBribeResources(from, to, resources) {
+  for (const [res, amt] of Object.entries(resources)) {
+    if (amt > 0) {
+      from.resources[res] -= amt;
+      to.resources[res] += amt;
+    }
+  }
+}
+
+export function cancelPendingAttackForPlayer(state, playerId) {
+  if (!state.pendingAttack) return;
+  if (state.pendingAttack.attackerId === playerId || state.pendingAttack.defenderId === playerId) {
+    state.pendingAttack = null;
   }
 }
 
@@ -1224,6 +1423,7 @@ export function merchantBankTrade(state, playerId, give, receive) {
 
 export function endTurn(state) {
   if (state.pendingStormCost) return { error: 'Must resolve storm cost before ending turn' };
+  if (state.pendingAttack) return { error: 'Must resolve pending attack before ending turn' };
 
   state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.turnOrder.length;
   state.turnPhase = TURN_PHASES.DRAW_RESOURCES;
@@ -1232,8 +1432,13 @@ export function endTurn(state) {
   state.hasRolled = false;
   state.pendingTrade = null;
   state.pendingTreasure = null;
+  state.pendingAttack = null; // safety fallback
   state.pendingStormCost = null; // Safety fallback
   state.attackedThisTurn = {}; // Reset attack cooldowns
+  // Rulebook: clear shipless recovery block — flag only lasts the turn it was set
+  for (const p of Object.values(state.players)) {
+    delete p.shiplessRecoveryBlocked;
+  }
   state.turnNumber++;
 
   // Clear per-ship turn flags
@@ -1283,6 +1488,7 @@ export function getPublicGameState(state, forPlayerId) {
       plunderPointCards: p.plunderPointCards,
       plunderPoints: calculatePlunderPoints(state, id),
       connected: p.connected,
+      shiplessRecoveryBlocked: p.shiplessRecoveryBlocked || false,
     };
   }
 
@@ -1301,6 +1507,7 @@ export function getPublicGameState(state, forPlayerId) {
     islands: state.islands,
     totalCols: state.totalCols,
     totalRows: state.totalRows,
+    walls: state.walls || [],
     players: publicPlayers,
     turnOrder: state.turnOrder,
     currentPlayerIndex: state.currentPlayerIndex,
@@ -1320,6 +1527,18 @@ export function getPublicGameState(state, forPlayerId) {
     resourceBank: state.resourceBank,
     pendingTreasure: state.pendingTreasure,
     pendingStormCost: state.pendingStormCost,
+    pendingAttack: state.pendingAttack ? {
+      type: state.pendingAttack.type,
+      attackerId: state.pendingAttack.attackerId,
+      defenderId: state.pendingAttack.defenderId,
+      attackerShipId: state.pendingAttack.attackerShipId,
+      targetId: state.pendingAttack.targetId,
+      // Only show bribe offer to attacker after defender has responded
+      bribeOffer: (forPlayerId === state.pendingAttack.attackerId && state.pendingAttack.bribeOffer !== undefined)
+        ? state.pendingAttack.bribeOffer : undefined,
+      defenderResponded: state.pendingAttack.bribeOffer !== undefined,
+      phase: state.pendingAttack.bribeOffer === undefined ? 'awaiting_defender' : 'awaiting_attacker',
+    } : null,
     tradeEligible,
     treaties: state.treaties.filter(t => t.turnNumber === state.turnNumber),
     settings: state.settings,
