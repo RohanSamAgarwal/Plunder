@@ -57,6 +57,13 @@ export const SHIPLESS_MODES = {
   FREE_RESOURCES: 'free_resources', // Extra resources to help rebuild
 };
 
+// Trade knowledge modes (configurable in lobby)
+export const TRADE_KNOWLEDGE = {
+  OPEN: 'open',           // All players see full trade details
+  SELECTIVE: 'selective',  // Others see only names, not resources
+  HIDDEN: 'hidden',        // Only the two parties see the trade
+};
+
 // Attack bribe modes (configurable in lobby)
 export const BRIBE_MODES = {
   NONE: 'none',         // No bribes, attacks resolve instantly

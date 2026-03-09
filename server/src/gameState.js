@@ -3,7 +3,7 @@ import { v4 as uuid } from 'uuid';
 import {
   GAME_PHASES, TURN_PHASES, INITIAL_LIFE_PEGS, WIN_POINTS,
   STORM_SIZE, BUILD_COSTS, RESOURCE_TYPES, TILE_TYPES, SHIPLESS_MODES,
-  MAX_CANNONS, MAX_MASTS, MAX_LIFE_PEGS, BRIBE_MODES,
+  MAX_CANNONS, MAX_MASTS, MAX_LIFE_PEGS, BRIBE_MODES, TRADE_KNOWLEDGE,
 } from '../../shared/constants.js';
 import { generateBoard, getStartingIslands } from './board.js';
 import { createResourceDeck, createTreasureDeck, drawFromDeck, shuffle } from './decks.js';
@@ -54,6 +54,7 @@ export function createGameState(players, playerCount, settings = {}) {
       shiplessMode: settings.shiplessMode || SHIPLESS_MODES.RULEBOOK,
       bribeMode: settings.bribeMode || BRIBE_MODES.NONE,
       ppToWin: settings.ppToWin || WIN_POINTS,
+      tradeKnowledge: settings.tradeKnowledge || TRADE_KNOWLEDGE.OPEN,
     },
   };
 

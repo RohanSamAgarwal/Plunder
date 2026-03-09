@@ -5,7 +5,7 @@ import { Server } from 'socket.io';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import cors from 'cors';
-import { EVENTS, GAME_PHASES, TURN_PHASES } from '../../shared/constants.js';
+import { EVENTS, GAME_PHASES, TURN_PHASES, TRADE_KNOWLEDGE } from '../../shared/constants.js';
 import {
   createRoom, joinRoom, removePlayer, getRoom,
   getRoomBySocketId, getPublicRoomState, changeColor, reconnectPlayer,
@@ -286,6 +286,15 @@ io.on('connection', (socket) => {
     const result = buildItem(state, found.player.id, buildType, targetShipId);
     broadcastGameState(found.room);
     callback?.(result);
+
+    if (result.success) {
+      const ship = result.ship || state.players[found.player.id]?.ships?.[0];
+      io.to(found.room.code).emit(EVENTS.BUILT, {
+        playerName: found.player.name,
+        buildType,
+        location: ship?.position || null,
+      });
+    }
   });
 
   socket.on(EVENTS.ATTACK_ISLAND, ({ shipId, islandId }, callback) => {
@@ -313,9 +322,11 @@ io.on('connection', (socket) => {
       callback?.({ success: true, pending: true });
     } else {
       callback?.(result);
+      const island = state.islands[islandId];
       io.to(found.room.code).emit(EVENTS.COMBAT_RESULT, {
         type: 'island',
         attacker: found.player.name,
+        location: island?.port || null,
         ...result,
       });
     }
@@ -346,9 +357,12 @@ io.on('connection', (socket) => {
       callback?.({ success: true, pending: true });
     } else {
       callback?.(result);
+      // Find attacker ship position for the animation location
+      const attackerShip = state.players[found.player.id]?.ships?.find(s => s.id === attackerShipId);
       io.to(found.room.code).emit(EVENTS.COMBAT_RESULT, {
         type: 'ship',
         attacker: found.player.name,
+        location: attackerShip?.position || null,
         ...result,
       });
     }
@@ -559,11 +573,47 @@ io.on('connection', (socket) => {
     state.pendingTrade = null;
     broadcastGameState(found.room);
 
-    io.to(found.room.code).emit(EVENTS.TRADE_RESOLVED, {
+    // Trade knowledge modes determine what other players see
+    const tradeKnowledge = state.settings.tradeKnowledge || TRADE_KNOWLEDGE.OPEN;
+    const fromPlayer = found.room.players.find(p => p.id === trade.fromId);
+    const toPlayer = found.room.players.find(p => p.id === trade.toId);
+    const fromName = fromPlayer?.name || 'Unknown';
+    const toName = toPlayer?.name || 'Unknown';
+
+    const fullDetails = {
       accepted,
       fromId: trade.fromId,
       toId: trade.toId,
-    });
+      fromName,
+      toName,
+      offer: trade.offer,
+      request: trade.request,
+    };
+
+    if (tradeKnowledge === TRADE_KNOWLEDGE.OPEN) {
+      // Everyone sees full details
+      io.to(found.room.code).emit(EVENTS.TRADE_RESOLVED, fullDetails);
+    } else if (tradeKnowledge === TRADE_KNOWLEDGE.SELECTIVE) {
+      // Parties get full details
+      const partyIds = [trade.fromId, trade.toId];
+      for (const p of found.room.players) {
+        const sock = io.sockets.sockets.get(p.socketId);
+        if (!sock) continue;
+        if (partyIds.includes(p.id)) {
+          sock.emit(EVENTS.TRADE_RESOLVED, fullDetails);
+        } else {
+          sock.emit(EVENTS.TRADE_RESOLVED, { accepted, fromId: trade.fromId, toId: trade.toId, fromName, toName });
+        }
+      }
+    } else {
+      // Hidden: only parties see the trade
+      for (const p of found.room.players) {
+        if (p.id === trade.fromId || p.id === trade.toId) {
+          const sock = io.sockets.sockets.get(p.socketId);
+          if (sock) sock.emit(EVENTS.TRADE_RESOLVED, fullDetails);
+        }
+      }
+    }
     callback?.({ success: true, accepted });
   });
 

@@ -29,7 +29,7 @@ const RESOURCE_META = {
 };
 const EMPTY_RESOURCES = { wood: 0, iron: 0, rum: 0, gold: 0 };
 
-export default function GameView({ gameState, playerInfo, messages, pendingTrade, pendingTreaty, pendingAttackBribe, attackBribeDecision, drawnCard, onDismissCard, deckShuffling, roomCode }) {
+export default function GameView({ gameState, playerInfo, messages, pendingTrade, pendingTreaty, pendingAttackBribe, attackBribeDecision, drawnCard, onDismissCard, deckShuffling, animations, roomCode }) {
   const { emit } = useSocketContext();
   const canvasRef = useRef(null);
   const [selectedShip, setSelectedShip] = useState(null);
@@ -621,15 +621,48 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
               </p>
             </div>
           )}
-          <canvas
-            ref={canvasRef}
-            width={canvasW}
-            height={canvasH}
-            className="game-board-canvas"
-            style={{ maxWidth: '100%', maxHeight: '100%' }}
-            onClick={handleCanvasClick}
-            onMouseMove={handleCanvasMouseMove}
-          />
+          <div className="relative inline-block" style={{ maxWidth: '100%', maxHeight: '100%' }}>
+            <canvas
+              ref={canvasRef}
+              width={canvasW}
+              height={canvasH}
+              className="game-board-canvas"
+              style={{ maxWidth: '100%', maxHeight: '100%' }}
+              onClick={handleCanvasClick}
+              onMouseMove={handleCanvasMouseMove}
+            />
+            {/* Animation overlays - positioned relative to rendered canvas size */}
+            {animations?.length > 0 && (
+              <div className="absolute inset-0 pointer-events-none overflow-visible">
+                {animations.map(anim => {
+                  const hasPos = anim.col != null && anim.row != null;
+                  if (hasPos) {
+                    const xPct = ((layout.gridPad + anim.col * layout.tileSize + layout.tileSize / 2) / canvasW) * 100;
+                    const yPct = ((layout.gridPad + anim.row * layout.tileSize) / canvasH) * 100;
+                    return (
+                      <div key={anim.id} className="absolute anim-board-popup-at"
+                        style={{ left: `${xPct}%`, top: `${yPct}%`, animationDuration: `${anim.duration}ms` }}>
+                        <div className="bg-pirate-dark/90 border border-pirate-gold/60 rounded-lg px-3 py-2 text-center shadow-lg shadow-black/50 whitespace-nowrap">
+                          <span className="text-lg">{anim.icon}</span>
+                          <p className="text-xs text-pirate-tan font-bold mt-0.5">{anim.text}</p>
+                        </div>
+                      </div>
+                    );
+                  }
+                  // No position: show centered on board
+                  return (
+                    <div key={anim.id} className="absolute inset-0 flex items-center justify-center anim-board-popup-center"
+                      style={{ animationDuration: `${anim.duration}ms` }}>
+                      <div className="bg-pirate-dark/90 border border-pirate-gold/60 rounded-lg px-5 py-3 text-center shadow-lg shadow-black/50">
+                        <span className="text-2xl">{anim.icon}</span>
+                        <p className="text-sm text-pirate-tan font-bold mt-1">{anim.text}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Right panel */}

@@ -1,6 +1,6 @@
 // Room Manager for Plunder: A Pirate's Life
 import { v4 as uuid } from 'uuid';
-import { PLAYER_COLORS, SHIPLESS_MODES, BRIBE_MODES } from '../../shared/constants.js';
+import { PLAYER_COLORS, SHIPLESS_MODES, BRIBE_MODES, TRADE_KNOWLEDGE } from '../../shared/constants.js';
 
 const rooms = new Map();
 
@@ -50,6 +50,7 @@ export function createRoom(hostSocketId, hostName) {
       shiplessMode: SHIPLESS_MODES.RULEBOOK,
       bribeMode: BRIBE_MODES.NONE,
       ppToWin: 10,
+      tradeKnowledge: TRADE_KNOWLEDGE.OPEN,
     },
   };
 
@@ -161,6 +162,9 @@ export function updateSettings(code, playerId, settings) {
     if (!isNaN(val) && val >= 0 && val <= 99) {
       room.settings.ppToWin = val;
     }
+  }
+  if (settings.tradeKnowledge && Object.values(TRADE_KNOWLEDGE).includes(settings.tradeKnowledge)) {
+    room.settings.tradeKnowledge = settings.tradeKnowledge;
   }
 
   return { success: true, settings: room.settings };

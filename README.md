@@ -111,8 +111,11 @@ plunder/
 - ✅ Top bar plunder points leaderboard with player names, sorted by score
 - ✅ Configurable win points (0-99) in lobby settings
 
+### Implemented (Phase 6)
+- ✅ Board overlay animations for combat, trades, and building events
+- ✅ Trade knowledge setting (open / selective / hidden) configurable in lobby
+
 ### To Do
-- 🔲 Add animations for events (attacks, trades, etc.)
 - 🔲 Ships need clearer visuals for masts/cannons/lives
 - 🔲 Redesign board + add zoom in/out
 

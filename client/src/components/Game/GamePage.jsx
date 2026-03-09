@@ -20,6 +20,7 @@ const EVENTS = {
   COMBAT_RESULT: 'combat-result',
   TRADE_PROPOSED: 'trade-proposed',
   TRADE_RESOLVED: 'trade-resolved',
+  BUILT: 'built',
   TREASURE_COLLECTED: 'treasure-collected',
   TREASURE_DECK_RESHUFFLED: 'treasure-deck-reshuffled',
   TREATY_PROPOSED: 'treaty-proposed',
@@ -28,6 +29,8 @@ const EVENTS = {
   ATTACK_BRIBE_DECISION: 'attack-bribe-decision',
   ATTACK_BRIBE_RESOLVED: 'attack-bribe-resolved',
 };
+
+let animIdCounter = 0;
 
 // localStorage helpers for session persistence
 function saveSession(data) {
@@ -55,6 +58,7 @@ export default function GamePage() {
   const [attackBribeDecision, setAttackBribeDecision] = useState(null);
   const [drawnCard, setDrawnCard] = useState(null);
   const [deckShuffling, setDeckShuffling] = useState(false);
+  const [animations, setAnimations] = useState([]);
   const [needsJoin, setNeedsJoin] = useState(false);
   const [joinName, setJoinName] = useState('');
   const [error, setError] = useState('');
@@ -127,17 +131,40 @@ export default function GamePage() {
         if (stormMoved) addSystemMessage('The storm has moved!');
       }),
       on(EVENTS.COMBAT_RESULT, (result) => {
-        const msg = result.type === 'island'
-          ? `${result.attacker} ${result.won ? 'conquered' : 'failed to take'} an island! (${result.attackRoll} vs ${result.defenseRoll})`
-          : `Ship combat! ${result.attacker} ${result.attackerWon ? 'won' : 'lost'}! (${result.attackRoll} vs ${result.defenseRoll})`;
-        addSystemMessage(msg);
+        if (result.type === 'island') {
+          const won = result.won;
+          addSystemMessage(`${result.attacker} ${won ? 'conquered' : 'failed to take'} an island! (${result.attackRoll} vs ${result.defenseRoll})`);
+          addAnimation('combat', won ? '\u2694\uFE0F' : '\uD83D\uDEE1\uFE0F', won ? `${result.attacker} conquered!` : `${result.attacker} repelled!`, result.location);
+        } else {
+          const won = result.attackerWon;
+          addSystemMessage(`Ship combat! ${result.attacker} ${won ? 'won' : 'lost'}! (${result.attackRoll} vs ${result.defenseRoll})`);
+          addAnimation('combat', '\uD83D\uDCA5', won ? `${result.attacker} won!` : `${result.attacker} lost!`, result.location);
+        }
       }),
       on(EVENTS.TRADE_PROPOSED, (trade) => {
         setPendingTrade(trade);
       }),
-      on(EVENTS.TRADE_RESOLVED, ({ accepted, fromId, toId }) => {
+      on(EVENTS.TRADE_RESOLVED, (data) => {
         setPendingTrade(null);
-        addSystemMessage(accepted ? 'Trade completed!' : 'Trade declined.');
+        if (data.fromName && data.toName) {
+          if (data.offer) {
+            addSystemMessage(data.accepted
+              ? `Trade completed between ${data.fromName} and ${data.toName}!`
+              : `Trade declined between ${data.fromName} and ${data.toName}.`);
+          } else {
+            addSystemMessage(data.accepted
+              ? `${data.fromName} and ${data.toName} completed a trade.`
+              : `${data.fromName} and ${data.toName} declined a trade.`);
+          }
+        } else {
+          addSystemMessage(data.accepted ? 'Trade completed!' : 'Trade declined.');
+        }
+        addAnimation('trade', data.accepted ? '\uD83E\uDD1D' : '\u274C', data.accepted ? 'Trade completed!' : 'Trade declined', null, data.accepted ? 2500 : 2000);
+      }),
+      on(EVENTS.BUILT, ({ playerName, buildType, location }) => {
+        const label = buildType === 'ship' ? 'a ship' : buildType === 'plunderPoint' ? 'a plunder point' : `a ${buildType}`;
+        addSystemMessage(`${playerName} built ${label}`);
+        addAnimation('build', buildType === 'ship' ? '\u26F5' : '\uD83D\uDD28', `${playerName} built ${label}`, location, 2000);
       }),
       on(EVENTS.TREASURE_COLLECTED, ({ playerName, card }) => {
         addSystemMessage(`${playerName} found treasure: ${card.description}`);
@@ -185,6 +212,15 @@ export default function GamePage() {
       message: text,
       timestamp: Date.now(),
     }]);
+  }
+
+  function addAnimation(type, icon, text, location, duration = 3000) {
+    const id = ++animIdCounter;
+    const anim = { id, type, icon, text, col: location?.col, row: location?.row, duration };
+    setAnimations(prev => [...prev, anim]);
+    setTimeout(() => {
+      setAnimations(prev => prev.filter(a => a.id !== id));
+    }, duration);
   }
 
   async function handleJoinFromLink() {
@@ -282,6 +318,7 @@ export default function GamePage() {
       drawnCard={drawnCard}
       onDismissCard={() => setDrawnCard(null)}
       deckShuffling={deckShuffling}
+      animations={animations}
       roomCode={code}
     />
   );

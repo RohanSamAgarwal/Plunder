@@ -67,6 +67,30 @@ body {
   animation: pulse-gold 2s infinite;
 }
 
+@keyframes boardPopupAt {
+  0% { opacity: 0; transform: translate(-50%, -80%) scale(0.5); }
+  15% { opacity: 1; transform: translate(-50%, -110%) scale(1.05); }
+  25% { transform: translate(-50%, -100%) scale(1); }
+  75% { opacity: 1; transform: translate(-50%, -100%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -100%) scale(0.9); }
+}
+
+@keyframes boardPopupCenter {
+  0% { opacity: 0; transform: scale(0.5); }
+  15% { opacity: 1; transform: scale(1.05); }
+  25% { transform: scale(1); }
+  75% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.9); }
+}
+
+.anim-board-popup-at {
+  animation: boardPopupAt 3s ease-in-out forwards;
+}
+
+.anim-board-popup-center {
+  animation: boardPopupCenter 3s ease-in-out forwards;
+}
+
 /* Player color indicators */
 .player-color-red { color: #ef4444; }
 .player-color-blue { color: #3b82f6; }
