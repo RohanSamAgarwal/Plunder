@@ -38,6 +38,25 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
   const [notification, setNotification] = useState('');
   const [treasuresFound, setTreasuresFound] = useState([]);
   const [bribeOffer, setBribeOffer] = useState({ ...EMPTY_RESOURCES });
+  const [activeTab, setActiveTab] = useState('controls');
+  const [unreadCount, setUnreadCount] = useState(0);
+  const activeTabRef = useRef('controls');
+
+  // Track unread messages when on controls tab
+  const prevMsgCount = useRef(messages?.length || 0);
+  useEffect(() => {
+    const count = messages?.length || 0;
+    if (count > prevMsgCount.current && activeTabRef.current !== 'log') {
+      setUnreadCount(prev => prev + (count - prevMsgCount.current));
+    }
+    prevMsgCount.current = count;
+  }, [messages]);
+
+  function switchTab(tab) {
+    setActiveTab(tab);
+    activeTabRef.current = tab;
+    if (tab === 'log') setUnreadCount(0);
+  }
 
   // Dynamic layout calculation
   const [layout, setLayout] = useState(() =>
@@ -617,21 +636,53 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
         {/* Right panel */}
         <div className="border-l border-pirate-tan/20 bg-pirate-brown/40 flex flex-col"
              style={{ width: SIDEBAR_W }}>
-          <ActionPanel
-            gameState={gameState}
-            myPlayer={myPlayer}
-            isMyTurn={isMyTurn}
-            turnPhase={turnPhase}
-            phase={phase}
-            selectedShip={selectedShip}
-            onDrawResources={handleDrawResources}
-            onRollDie={handleRollDie}
-            onBuild={handleBuild}
-            onEndTurn={handleEndTurn}
-            emit={emit}
-            pendingTreaty={pendingTreaty}
-          />
-          <ChatLog messages={messages} emit={emit} />
+          {/* Tab bar */}
+          <div className="flex border-b border-pirate-tan/20 bg-pirate-dark/40 shrink-0">
+            <button
+              onClick={() => switchTab('controls')}
+              className={`flex-1 px-3 py-2 text-sm font-pirate transition-colors
+                ${activeTab === 'controls'
+                  ? 'text-pirate-gold border-b-2 border-pirate-gold'
+                  : 'text-pirate-tan/50 hover:text-pirate-tan/80'}`}
+            >
+              Controls
+            </button>
+            <button
+              onClick={() => switchTab('log')}
+              className={`flex-1 px-3 py-2 text-sm font-pirate transition-colors relative
+                ${activeTab === 'log'
+                  ? 'text-pirate-gold border-b-2 border-pirate-gold'
+                  : 'text-pirate-tan/50 hover:text-pirate-tan/80'}`}
+            >
+              Chat & Log
+              {unreadCount > 0 && activeTab !== 'log' && (
+                <span className="absolute -top-0.5 ml-1 inline-flex items-center justify-center
+                                 min-w-[18px] h-[18px] px-1 rounded-full bg-pirate-gold text-pirate-dark
+                                 text-[10px] font-bold">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
+            </button>
+          </div>
+          {/* Tab content */}
+          {activeTab === 'controls' ? (
+            <ActionPanel
+              gameState={gameState}
+              myPlayer={myPlayer}
+              isMyTurn={isMyTurn}
+              turnPhase={turnPhase}
+              phase={phase}
+              selectedShip={selectedShip}
+              onDrawResources={handleDrawResources}
+              onRollDie={handleRollDie}
+              onBuild={handleBuild}
+              onEndTurn={handleEndTurn}
+              emit={emit}
+              pendingTreaty={pendingTreaty}
+            />
+          ) : (
+            <ChatLog messages={messages} emit={emit} />
+          )}
         </div>
       </div>
     </div>

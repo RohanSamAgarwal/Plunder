@@ -107,12 +107,12 @@ plunder/
 - ✅ Visual overhaul (board rendering, ship icons, edge wall barriers)
 - ✅ Treasure cards displayed to all players with dismiss popup
 - ✅ Treasure deck auto-reshuffle with 5-second card animation
+- ✅ Tabbed sidebar (Controls / Chat & Log) with unread message badge
 
 ### To Do
 - 🔲 Add animations for events (attacks, trades, etc.)
 - 🔲 Ships need clearer visuals for masts/cannons/lives
 - 🔲 Redesign board + add zoom in/out
-- 🔲 Chat/battle log should be toggleable/resizable
 - 🔲 Plunder point counter should show names + use more top bar space
 
 ## Tech Stack

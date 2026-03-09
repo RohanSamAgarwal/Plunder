@@ -17,10 +17,7 @@ export default function ChatLog({ messages, emit }) {
   }
 
   return (
-    <div className="border-t border-pirate-tan/20 flex flex-col h-56">
-      <div className="px-3 py-1.5 text-xs text-pirate-tan/70 border-b border-pirate-tan/10">
-        💬 Chat & Log
-      </div>
+    <div className="flex flex-col flex-1 min-h-0">
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-1 space-y-0.5">
         {messages.map((msg, i) => (
           <div key={i} className="text-xs">
