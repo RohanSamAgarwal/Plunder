@@ -114,10 +114,15 @@ plunder/
 ### Implemented (Phase 6)
 - ✅ Board overlay animations for combat, trades, and building events
 - ✅ Trade knowledge setting (open / selective / hidden) configurable in lobby
+- ✅ Storm toll cancel move option
+- ✅ Organic island shapes (smooth outlines with Bezier curves, replacing grid squares)
+- ✅ Water depth gradients (shallow turquoise near islands → deep blue in open ocean)
+- ✅ Shore rings and beach edges around islands
+- ✅ Subtle dashed grid lines on water only
 
 ### To Do
 - 🔲 Ships need clearer visuals for masts/cannons/lives
-- 🔲 Redesign board + add zoom in/out
+- 🔲 Add zoom in/out for board
 
 ## Tech Stack
 - **Frontend**: React 18, Vite, Tailwind CSS, HTML5 Canvas

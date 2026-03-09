@@ -73,6 +73,316 @@ const SHIP_COLORS = {
 
 // ── Offscreen Board Cache ────────────────────────────────────────
 let _cachedBoard = null; // { canvas, tileSize, boardKey }
+let _islandOutlines = null; // Map<islandId, { path, centerX, centerY }>
+
+// ── Depth Map (BFS distance from land) ──────────────────────────
+function computeDepthMap(board, totalCols, totalRows) {
+  const depth = Array.from({ length: totalRows }, () => new Array(totalCols).fill(999));
+  const queue = [];
+  for (let r = 0; r < totalRows; r++) {
+    for (let c = 0; c < totalCols; c++) {
+      const t = board[r][c].type;
+      if (t === 'island' || t === 'merchant' || t === 'normal_island') {
+        depth[r][c] = 0;
+        queue.push([c, r]);
+      }
+    }
+  }
+  let head = 0;
+  while (head < queue.length) {
+    const [cx, cy] = queue[head++];
+    const d = depth[cy][cx] + 1;
+    for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+      const nx = cx + dx, ny = cy + dy;
+      if (nx >= 0 && nx < totalCols && ny >= 0 && ny < totalRows && depth[ny][nx] > d) {
+        depth[ny][nx] = d;
+        queue.push([nx, ny]);
+      }
+    }
+  }
+  return depth;
+}
+
+// ── Island Outline (organic shape) ──────────────────────────────
+function computeIslandOutline(tiles, ts, islandId, gp, padding = 0) {
+  if (!tiles || tiles.length === 0) return null;
+
+  const tileSet = new Set(tiles.map(t => `${t.col},${t.row}`));
+  const pad = padding || ts * 0.08; // outward expansion for organic feel
+
+  // Trace boundary edges: collect all tile-edge segments where one side is island, other isn't
+  // Each edge is between two grid-corner points
+  const edges = [];
+  for (const t of tiles) {
+    const { col, row } = t;
+    // Check 4 neighbors — if absent, that edge is a boundary
+    if (!tileSet.has(`${col},${row - 1}`)) // top edge
+      edges.push({ x1: col, y1: row, x2: col + 1, y2: row, dir: 'T' });
+    if (!tileSet.has(`${col},${row + 1}`)) // bottom edge
+      edges.push({ x1: col + 1, y1: row + 1, x2: col, y2: row + 1, dir: 'B' });
+    if (!tileSet.has(`${col - 1},${row}`)) // left edge
+      edges.push({ x1: col, y1: row + 1, x2: col, y2: row, dir: 'L' });
+    if (!tileSet.has(`${col + 1},${row}`)) // right edge
+      edges.push({ x1: col + 1, y1: row, x2: col + 1, y2: row + 1, dir: 'R' });
+  }
+
+  if (edges.length === 0) return null;
+
+  // Chain edges into ordered loop (each edge endpoint matches next edge startpoint)
+  const edgeMap = new Map();
+  for (const e of edges) {
+    const key = `${e.x1},${e.y1}`;
+    if (!edgeMap.has(key)) edgeMap.set(key, []);
+    edgeMap.get(key).push(e);
+  }
+
+  const ordered = [edges[0]];
+  const usedSet = new Set([0]);
+  let current = ordered[0];
+
+  for (let safety = 0; safety < edges.length + 5; safety++) {
+    const endKey = `${current.x2},${current.y2}`;
+    const candidates = edgeMap.get(endKey);
+    if (!candidates) break;
+    let found = false;
+    for (const cand of candidates) {
+      const idx = edges.indexOf(cand);
+      if (!usedSet.has(idx)) {
+        usedSet.add(idx);
+        ordered.push(cand);
+        current = cand;
+        found = true;
+        break;
+      }
+    }
+    if (!found) break;
+  }
+
+  // Convert grid corners to pixel coords and compute center
+  const points = ordered.map(e => ({
+    x: gp + e.x1 * ts,
+    y: gp + e.y1 * ts,
+  }));
+
+  const centerX = tiles.reduce((s, t) => s + gp + t.col * ts + ts / 2, 0) / tiles.length;
+  const centerY = tiles.reduce((s, t) => s + gp + t.row * ts + ts / 2, 0) / tiles.length;
+
+  // Merge colinear consecutive points (same x or same y)
+  const merged = [points[0]];
+  for (let i = 1; i < points.length; i++) {
+    const prev = merged[merged.length - 1];
+    const curr = points[i];
+    const next = points[(i + 1) % points.length];
+    // Skip if prev→curr→next are colinear
+    const dx1 = curr.x - prev.x, dy1 = curr.y - prev.y;
+    const dx2 = next.x - curr.x, dy2 = next.y - curr.y;
+    if (dx1 * dy2 - dy1 * dx2 !== 0) {
+      merged.push(curr);
+    }
+  }
+
+  // Apply corner rounding + wobble to create organic Path2D
+  const seed = hashStr(islandId);
+  const path = new Path2D();
+  const n = merged.length;
+  if (n < 3) {
+    // Single tile or line - draw as rounded rect
+    const minX = Math.min(...tiles.map(t => t.col));
+    const minY = Math.min(...tiles.map(t => t.row));
+    const maxX = Math.max(...tiles.map(t => t.col));
+    const maxY = Math.max(...tiles.map(t => t.row));
+    const rx = gp + minX * ts - pad;
+    const ry = gp + minY * ts - pad;
+    const rw = (maxX - minX + 1) * ts + pad * 2;
+    const rh = (maxY - minY + 1) * ts + pad * 2;
+    const rr = ts * 0.35;
+    roundRectPath(path, rx, ry, rw, rh, rr);
+    return { path, centerX, centerY };
+  }
+
+  // For each corner: offset outward from center, then apply Bezier rounding
+  const cornerR = ts * 0.3;
+  const wobbleAmt = ts * 0.06;
+
+  for (let i = 0; i < n; i++) {
+    const p = merged[i];
+    const prev = merged[(i - 1 + n) % n];
+    const next = merged[(i + 1) % n];
+
+    // Direction vectors
+    const dxIn = p.x - prev.x, dyIn = p.y - prev.y;
+    const dxOut = next.x - p.x, dyOut = next.y - p.y;
+    const lenIn = Math.sqrt(dxIn * dxIn + dyIn * dyIn) || 1;
+    const lenOut = Math.sqrt(dxOut * dxOut + dyOut * dyOut) || 1;
+
+    // Perpendicular outward (away from center)
+    const mx = p.x - centerX, my = p.y - centerY;
+    const mLen = Math.sqrt(mx * mx + my * my) || 1;
+    const outX = mx / mLen, outY = my / mLen;
+
+    // Deterministic wobble
+    const w = ((seed * (i + 1) * 7 + i * 31) % 100) / 100 - 0.5;
+    const wobX = outX * (pad + w * wobbleAmt);
+    const wobY = outY * (pad + w * wobbleAmt);
+
+    // Offset point
+    const ox = p.x + wobX;
+    const oy = p.y + wobY;
+
+    // Rounding: use limited radius
+    const r = Math.min(cornerR, lenIn * 0.4, lenOut * 0.4);
+
+    // Points before and after corner
+    const bx = ox - (dxIn / lenIn) * r;
+    const by = oy - (dyIn / lenIn) * r;
+    const ax = ox + (dxOut / lenOut) * r;
+    const ay = oy + (dyOut / lenOut) * r;
+
+    if (i === 0) {
+      path.moveTo(bx, by);
+    } else {
+      path.lineTo(bx, by);
+    }
+    path.quadraticCurveTo(ox, oy, ax, ay);
+  }
+  path.closePath();
+
+  return { path, centerX, centerY };
+}
+
+function hashStr(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+}
+
+function roundRectPath(path, x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  path.moveTo(x + r, y);
+  path.lineTo(x + w - r, y);
+  path.quadraticCurveTo(x + w, y, x + w, y + r);
+  path.lineTo(x + w, y + h - r);
+  path.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  path.lineTo(x + r, y + h);
+  path.quadraticCurveTo(x, y + h, x, y + h - r);
+  path.lineTo(x, y + r);
+  path.quadraticCurveTo(x, y, x + r, y);
+  path.closePath();
+}
+
+// ── Organic Island Drawing ──────────────────────────────────────
+function drawShoreRing(ctx, outlinePath, ts) {
+  ctx.save();
+  // Outer shallow-water glow
+  ctx.strokeStyle = 'rgba(100, 180, 210, 0.12)';
+  ctx.lineWidth = ts * 0.4;
+  ctx.lineJoin = 'round';
+  ctx.stroke(outlinePath);
+  // Inner shore wash
+  ctx.strokeStyle = 'rgba(160, 210, 230, 0.18)';
+  ctx.lineWidth = ts * 0.2;
+  ctx.stroke(outlinePath);
+  // Foam edge
+  ctx.strokeStyle = 'rgba(220, 240, 255, 0.15)';
+  ctx.lineWidth = ts * 0.08;
+  ctx.stroke(outlinePath);
+  ctx.restore();
+}
+
+function drawOrganicIsland(ctx, island, outline, ts, gp, islandSet) {
+  if (!outline) return;
+  const { path, centerX, centerY } = outline;
+  const isMerchant = island.type === 'merchant';
+
+  // Shore ring (on the water beneath)
+  drawShoreRing(ctx, path, ts);
+
+  // Beach fill
+  ctx.fillStyle = isMerchant ? COLORS.merchantSand : COLORS.beachLight;
+  ctx.fill(path);
+
+  // Wet sand edge (stroke inside the path)
+  ctx.save();
+  ctx.clip(path);
+  ctx.strokeStyle = isMerchant ? '#b09030' : COLORS.sandDark;
+  ctx.lineWidth = ts * 0.14;
+  ctx.stroke(path);
+
+  // Inner vegetation
+  const innerPad = -ts * 0.15;
+  const innerOutline = computeIslandOutline(island.tiles, ts, island.id + '_inner', gp, innerPad);
+  if (innerOutline) {
+    const greenVar = isMerchant ? COLORS.merchantGreen : COLORS.green1;
+    ctx.fillStyle = greenVar;
+    ctx.fill(innerOutline.path);
+
+    // Vegetation blobs
+    for (const tile of island.tiles) {
+      const tx = gp + tile.col * ts + ts / 2;
+      const ty = gp + tile.row * ts + ts / 2;
+      const blobSeed = tile.col * 7 + tile.row * 13;
+      const blobCount = 3 + (blobSeed % 3);
+      for (let b = 0; b < blobCount; b++) {
+        const blobR = ts * 0.07 + ((blobSeed + b * 11) % 5) * ts * 0.012;
+        const bx = tx + ((blobSeed + b * 19) % Math.round(ts * 0.5)) - ts * 0.25;
+        const by = ty + ((blobSeed + b * 17) % Math.round(ts * 0.5)) - ts * 0.25;
+        const bColor = b % 3 === 0 ? COLORS.greenDark : (b % 3 === 1 ? greenVar : COLORS.greenLight);
+        ctx.fillStyle = bColor;
+        ctx.beginPath();
+        ctx.arc(bx, by, blobR, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Flowers
+      const flowerSeed = tile.col * 23 + tile.row * 31;
+      const flowerCount = 1 + (flowerSeed % 3);
+      for (let f = 0; f < flowerCount; f++) {
+        const fx = tx + ((flowerSeed + f * 29) % Math.round(ts * 0.4)) - ts * 0.2;
+        const fy = ty + ((flowerSeed + f * 37) % Math.round(ts * 0.4)) - ts * 0.2;
+        ctx.fillStyle = f % 2 === 0 ? COLORS.flowerRed : COLORS.flowerYellow;
+        ctx.beginPath();
+        ctx.arc(fx, fy, Math.max(1, ts * 0.018), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  // Palm trees on edge tiles
+  if (ts >= 50) {
+    for (const tile of island.tiles) {
+      const k = `${tile.col},${tile.row}`;
+      const hasWN = !islandSet.has(`${tile.col},${tile.row - 1}`);
+      const hasWS = !islandSet.has(`${tile.col},${tile.row + 1}`);
+      const hasWW = !islandSet.has(`${tile.col - 1},${tile.row}`);
+      const hasWE = !islandSet.has(`${tile.col + 1},${tile.row}`);
+      const isEdge = hasWN || hasWS || hasWW || hasWE;
+      if (!isEdge) continue;
+      const palmSeed = tile.col * 17 + tile.row * 29;
+      const px0 = gp + tile.col * ts;
+      const py0 = gp + tile.row * ts;
+      let px, py;
+      if (hasWN) { px = px0 + ts * 0.3 + (palmSeed % Math.round(ts * 0.4)); py = py0 + ts * 0.25; }
+      else if (hasWS) { px = px0 + ts * 0.3 + (palmSeed % Math.round(ts * 0.4)); py = py0 + ts * 0.75; }
+      else if (hasWW) { px = px0 + ts * 0.25; py = py0 + ts * 0.3 + (palmSeed % Math.round(ts * 0.4)); }
+      else { px = px0 + ts * 0.75; py = py0 + ts * 0.3 + (palmSeed % Math.round(ts * 0.4)); }
+      drawPalmTree(ctx, px, py, ts);
+    }
+  }
+
+  // Merchant stall
+  if (isMerchant) {
+    drawMarketStall(ctx, centerX, centerY, ts);
+  }
+
+  ctx.restore(); // release clip
+
+  // Subtle outline stroke
+  ctx.strokeStyle = 'rgba(90, 70, 40, 0.3)';
+  ctx.lineWidth = Math.max(1, ts * 0.02);
+  ctx.stroke(path);
+}
 
 function computeBoardKey(board, totalCols, totalRows, walls) {
   // Simple hash of tile types + positions + walls for cache invalidation
@@ -179,7 +489,19 @@ function drawStaticLayer(ctx, canvas, gameState, layout) {
     }
   }
 
-  // Draw tiles
+  // Compute depth map for water color gradients
+  const depthMap = computeDepthMap(board, totalCols, totalRows);
+
+  // Compute organic island outlines
+  _islandOutlines = new Map();
+  for (const [id, island] of Object.entries(islands)) {
+    if (island.type === 'obstacle') continue;
+    if (!island.tiles || island.tiles.length === 0) continue;
+    const outline = computeIslandOutline(island.tiles, ts, id, gp);
+    if (outline) _islandOutlines.set(id, outline);
+  }
+
+  // Draw tiles — skip island/merchant tiles (drawn organically below)
   for (let r = 0; r < totalRows; r++) {
     for (let c = 0; c < totalCols; c++) {
       const tile = board[r][c];
@@ -188,13 +510,12 @@ function drawStaticLayer(ctx, canvas, gameState, layout) {
 
       switch (tile.type) {
         case 'sea':
-          drawSeaTile(ctx, x, y, c, r, ts, islandSet);
+          drawSeaTile(ctx, x, y, c, r, ts, islandSet, depthMap);
           break;
         case 'island':
-          drawIslandTile(ctx, x, y, c, r, ts, islandSet);
-          break;
         case 'merchant':
-          drawMerchantTile(ctx, x, y, c, r, ts, islandSet);
+          // Draw sea underneath (organic island shape drawn later on top)
+          drawSeaTile(ctx, x, y, c, r, ts, islandSet, depthMap);
           break;
         case 'port':
           drawPortTile(ctx, x, y, c, r, ts, tile, islands, players);
@@ -206,35 +527,41 @@ function drawStaticLayer(ctx, canvas, gameState, layout) {
           drawLandBarrier(ctx, x, y, ts);
           break;
         default:
-          drawSeaTile(ctx, x, y, c, r, ts, islandSet);
+          drawSeaTile(ctx, x, y, c, r, ts, islandSet, depthMap);
       }
 
-      // Grid lines
-      ctx.strokeStyle = COLORS.gridLine;
-      ctx.lineWidth = 0.5;
-      ctx.strokeRect(x, y, ts, ts);
+      // Subtle grid lines — only on water/port, very faint dashed
+      if (tile.type === 'sea' || tile.type === 'port') {
+        ctx.strokeStyle = 'rgba(100, 150, 180, 0.04)';
+        ctx.lineWidth = 0.3;
+        ctx.setLineDash([ts * 0.12, ts * 0.18]);
+        ctx.strokeRect(x, y, ts, ts);
+        ctx.setLineDash([]);
+      }
     }
+  }
+
+  // Draw organic island shapes on top of sea
+  for (const [id, island] of Object.entries(islands)) {
+    if (island.type === 'obstacle') continue;
+    const outline = _islandOutlines.get(id);
+    if (outline) drawOrganicIsland(ctx, island, outline, ts, gp, islandSet);
   }
 
   // Wall barriers between tiles
   drawWalls(ctx, gameState, ts, gp);
 
-  // Island decorations (flags, skull badges)
-  for (let r = 0; r < totalRows; r++) {
-    for (let c = 0; c < totalCols; c++) {
-      const tile = board[r][c];
-      if (tile.type !== 'island' || !tile.skulls) continue;
-      const x = gp + c * ts;
-      const y = gp + r * ts;
+  // Island decorations — positioned at island center
+  for (const [id, island] of Object.entries(islands)) {
+    if (island.type === 'obstacle' || !island.skulls) continue;
+    const outline = _islandOutlines.get(id);
+    if (!outline) continue;
 
-      const island = findIslandById(islands, tile.islandId);
-      if (island && island.tiles[0]?.col === c && island.tiles[0]?.row === r) {
-        drawSkullBadge(ctx, x, y, tile.skulls, ts);
+    const { centerX, centerY } = outline;
+    drawSkullBadge(ctx, centerX - ts / 2, centerY - ts * 0.35, island.skulls, ts);
 
-        if (island.owner && players[island.owner]) {
-          drawOwnerFlag(ctx, x + ts - Math.round(ts * 0.06), y + Math.round(ts * 0.04), SHIP_COLORS[players[island.owner].color], ts);
-        }
-      }
+    if (island.owner && players[island.owner]) {
+      drawOwnerFlag(ctx, centerX + ts * 0.35, centerY - ts * 0.35, SHIP_COLORS[players[island.owner].color], ts);
     }
   }
 
@@ -289,38 +616,64 @@ function drawDynamicLayer(ctx, gameState, options, layout) {
     }
   }
 
-  // Selected island highlight
+  // Selected island highlight — use organic outline if available
   if (selectedIsland && islands[selectedIsland]) {
-    const isl = islands[selectedIsland];
-    ctx.strokeStyle = '#ffd700';
-    ctx.lineWidth = 3;
-    for (const t of isl.tiles) {
-      ctx.strokeRect(gp + t.col * ts + 1, gp + t.row * ts + 1, ts - 2, ts - 2);
+    const outline = _islandOutlines?.get(selectedIsland);
+    if (outline) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255, 215, 0, 0.7)';
+      ctx.lineWidth = ts * 0.06;
+      ctx.shadowColor = '#ffd700';
+      ctx.shadowBlur = ts * 0.2;
+      ctx.stroke(outline.path);
+      ctx.shadowBlur = 0;
+      // Inner bright stroke
+      ctx.strokeStyle = 'rgba(255, 235, 100, 0.5)';
+      ctx.lineWidth = ts * 0.03;
+      ctx.stroke(outline.path);
+      ctx.restore();
+    } else {
+      // Fallback for islands without outlines
+      const isl = islands[selectedIsland];
+      ctx.strokeStyle = '#ffd700';
+      ctx.lineWidth = 3;
+      for (const t of isl.tiles) {
+        ctx.strokeRect(gp + t.col * ts + 1, gp + t.row * ts + 1, ts - 2, ts - 2);
+      }
     }
   }
 }
 
 // ── Tile Renderers ─────────────────────────────────────────────
 
-function drawSeaTile(ctx, x, y, col, row, ts, islandSet) {
-  // Depth-aware base: deeper blue away from islands
-  const nearIsland = islandSet.has(`${col},${row - 1}`) || islandSet.has(`${col},${row + 1}`) ||
-                     islandSet.has(`${col - 1},${row}`) || islandSet.has(`${col + 1},${row}`);
-  const base = nearIsland ? COLORS.seaShallow : ((row + col) % 2 === 0 ? COLORS.sea1 : COLORS.sea2);
+function drawSeaTile(ctx, x, y, col, row, ts, islandSet, depthMap) {
+  // Depth-aware base: smooth gradient from shallow to deep
+  const dist = depthMap ? depthMap[row]?.[col] ?? 4 : 4;
+
+  let base;
+  if (dist <= 1) {
+    base = '#1f6a8a'; // shallow — bright blue-green
+  } else if (dist === 2) {
+    base = '#1a5878'; // medium shallow
+  } else if (dist === 3) {
+    base = (row + col) % 2 === 0 ? '#184d6e' : '#164563';
+  } else {
+    base = (row + col) % 2 === 0 ? COLORS.sea1 : COLORS.sea2;
+  }
   ctx.fillStyle = base;
   ctx.fillRect(x, y, ts, ts);
 
-  // Depth gradient overlay
-  if (!nearIsland) {
+  // Depth gradient overlay — darker in deep water
+  if (dist >= 3) {
     const grad = ctx.createRadialGradient(x + ts * 0.4, y + ts * 0.4, 0, x + ts / 2, y + ts / 2, ts * 0.9);
-    grad.addColorStop(0, 'rgba(15, 45, 69, 0.18)');
+    grad.addColorStop(0, 'rgba(15, 45, 69, 0.15)');
     grad.addColorStop(1, 'transparent');
     ctx.fillStyle = grad;
     ctx.fillRect(x, y, ts, ts);
-  } else {
-    // Shallow water brightening near islands
+  } else if (dist <= 1) {
+    // Bright shallow shimmer
     const grad = ctx.createRadialGradient(x + ts / 2, y + ts / 2, ts * 0.1, x + ts / 2, y + ts / 2, ts * 0.7);
-    grad.addColorStop(0, 'rgba(31, 96, 128, 0.12)');
+    grad.addColorStop(0, 'rgba(40, 130, 170, 0.10)');
     grad.addColorStop(1, 'transparent');
     ctx.fillStyle = grad;
     ctx.fillRect(x, y, ts, ts);
@@ -328,8 +681,9 @@ function drawSeaTile(ctx, x, y, col, row, ts, islandSet) {
 
   // Wave lines (5 per tile with varied amplitude)
   const seed = (col * 7 + row * 13) % 17;
+  const waveAlphaScale = dist <= 1 ? 0.6 : 1.0; // softer waves near shore
   for (let i = 0; i < 5; i++) {
-    const waveOpacity = 0.05 + (i % 3) * 0.02;
+    const waveOpacity = (0.05 + (i % 3) * 0.02) * waveAlphaScale;
     ctx.strokeStyle = `rgba(100, 180, 220, ${waveOpacity})`;
     ctx.lineWidth = 0.8 + (i % 2) * 0.4;
     const waveY = y + ts * 0.08 + i * ts * 0.18 + ((seed + i * 3) % 7);
@@ -341,184 +695,20 @@ function drawSeaTile(ctx, x, y, col, row, ts, islandSet) {
     ctx.stroke();
   }
 
-  // Caustic light spots (2-3 per tile)
+  // Caustic light spots (2-3 per tile, brighter in shallow water)
   const causticCount = 2 + (seed % 2);
+  const causticAlpha = dist <= 2 ? 0.08 : 0.06;
   for (let i = 0; i < causticCount; i++) {
     const cx = x + ((seed * 11 + i * 31) % Math.round(ts * 0.7)) + ts * 0.15;
     const cy = y + ((seed * 17 + i * 23) % Math.round(ts * 0.7)) + ts * 0.15;
     const cr = ts * 0.03 + (i % 2) * ts * 0.02;
-    ctx.fillStyle = COLORS.seaCaustic;
+    ctx.fillStyle = `rgba(80, 200, 240, ${causticAlpha})`;
     ctx.beginPath();
     ctx.arc(cx, cy, cr, 0, Math.PI * 2);
     ctx.fill();
   }
-
-  // Shore wash and foam on tiles adjacent to land
-  drawShoreWash(ctx, x, y, col, row, ts, islandSet);
 }
 
-function drawShoreWash(ctx, x, y, col, row, ts, islandSet) {
-  const shoreW = Math.round(ts * 0.16);
-  const shoreColor = 'rgba(160, 210, 230, 0.15)';
-  const foamColor = COLORS.beachFoam;
-  const foamDotR = Math.max(1, ts * 0.015);
-
-  const sides = [
-    { has: islandSet.has(`${col},${row - 1}`), dir: 'N' },
-    { has: islandSet.has(`${col},${row + 1}`), dir: 'S' },
-    { has: islandSet.has(`${col - 1},${row}`), dir: 'W' },
-    { has: islandSet.has(`${col + 1},${row}`), dir: 'E' },
-  ];
-
-  for (const side of sides) {
-    if (!side.has) continue;
-    let g;
-    if (side.dir === 'N') {
-      g = ctx.createLinearGradient(x, y, x, y + shoreW);
-      g.addColorStop(0, shoreColor); g.addColorStop(1, 'transparent');
-      ctx.fillStyle = g; ctx.fillRect(x, y, ts, shoreW);
-    } else if (side.dir === 'S') {
-      g = ctx.createLinearGradient(x, y + ts, x, y + ts - shoreW);
-      g.addColorStop(0, shoreColor); g.addColorStop(1, 'transparent');
-      ctx.fillStyle = g; ctx.fillRect(x, y + ts - shoreW, ts, shoreW);
-    } else if (side.dir === 'W') {
-      g = ctx.createLinearGradient(x, y, x + shoreW, y);
-      g.addColorStop(0, shoreColor); g.addColorStop(1, 'transparent');
-      ctx.fillStyle = g; ctx.fillRect(x, y, shoreW, ts);
-    } else {
-      g = ctx.createLinearGradient(x + ts, y, x + ts - shoreW, y);
-      g.addColorStop(0, shoreColor); g.addColorStop(1, 'transparent');
-      ctx.fillStyle = g; ctx.fillRect(x + ts - shoreW, y, shoreW, ts);
-    }
-
-    // Foam particles along shore edge
-    ctx.fillStyle = foamColor;
-    const foamSeed = col * 11 + row * 7;
-    for (let f = 0; f < 4; f++) {
-      let fx, fy;
-      const offset = ((foamSeed + f * 13) % Math.round(ts * 0.8)) + ts * 0.1;
-      if (side.dir === 'N') { fx = x + offset; fy = y + ((foamSeed + f) % Math.round(shoreW * 0.6)); }
-      else if (side.dir === 'S') { fx = x + offset; fy = y + ts - ((foamSeed + f) % Math.round(shoreW * 0.6)); }
-      else if (side.dir === 'W') { fy = y + offset; fx = x + ((foamSeed + f) % Math.round(shoreW * 0.6)); }
-      else { fy = y + offset; fx = x + ts - ((foamSeed + f) % Math.round(shoreW * 0.6)); }
-      ctx.beginPath();
-      ctx.arc(fx, fy, foamDotR, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-}
-
-function drawIslandTile(ctx, x, y, col, row, ts, islandSet) {
-  // Water-neighbor detection
-  const hasWN = !islandSet.has(`${col},${row - 1}`);
-  const hasWS = !islandSet.has(`${col},${row + 1}`);
-  const hasWW = !islandSet.has(`${col - 1},${row}`);
-  const hasWE = !islandSet.has(`${col + 1},${row}`);
-  const waterSides = (hasWN ? 1 : 0) + (hasWS ? 1 : 0) + (hasWW ? 1 : 0) + (hasWE ? 1 : 0);
-  const isEdge = waterSides > 0;
-
-  // Layer 1: Beach ring (sandy base on water-facing edges)
-  const beachW = Math.round(ts * 0.15);
-  ctx.fillStyle = COLORS.beachLight;
-  ctx.fillRect(x, y, ts, ts);
-
-  // Wet sand gradient at waterline edges
-  if (hasWN) {
-    const g = ctx.createLinearGradient(x, y, x, y + beachW);
-    g.addColorStop(0, COLORS.beachWet); g.addColorStop(0.5, COLORS.sandDark); g.addColorStop(1, COLORS.sand);
-    ctx.fillStyle = g; ctx.fillRect(x, y, ts, beachW);
-  }
-  if (hasWS) {
-    const g = ctx.createLinearGradient(x, y + ts, x, y + ts - beachW);
-    g.addColorStop(0, COLORS.beachWet); g.addColorStop(0.5, COLORS.sandDark); g.addColorStop(1, COLORS.sand);
-    ctx.fillStyle = g; ctx.fillRect(x, y + ts - beachW, ts, beachW);
-  }
-  if (hasWW) {
-    const g = ctx.createLinearGradient(x, y, x + beachW, y);
-    g.addColorStop(0, COLORS.beachWet); g.addColorStop(0.5, COLORS.sandDark); g.addColorStop(1, COLORS.sand);
-    ctx.fillStyle = g; ctx.fillRect(x, y, beachW, ts);
-  }
-  if (hasWE) {
-    const g = ctx.createLinearGradient(x + ts, y, x + ts - beachW, y);
-    g.addColorStop(0, COLORS.beachWet); g.addColorStop(0.5, COLORS.sandDark); g.addColorStop(1, COLORS.sand);
-    ctx.fillStyle = g; ctx.fillRect(x + ts - beachW, y, beachW, ts);
-  }
-
-  // Layer 2: Vegetation — canopy blobs
-  const inset = Math.round(ts * 0.12);
-  const gx = x + (hasWW ? inset + 3 : 1);
-  const gy = y + (hasWN ? inset + 3 : 1);
-  const gw = ts - (hasWW ? inset + 3 : 1) - (hasWE ? inset + 3 : 1);
-  const gh = ts - (hasWN ? inset + 3 : 1) - (hasWS ? inset + 3 : 1);
-
-  if (gw > 6 && gh > 6) {
-    // Base vegetation fill
-    const greenVar = ((col * 7 + row * 13) % 3 === 0) ? COLORS.green2 : COLORS.green1;
-    ctx.fillStyle = greenVar;
-    roundRect(ctx, gx, gy, gw, gh, Math.round(ts * 0.08));
-    ctx.fill();
-
-    // Canopy blobs (overlapping circles for organic feel)
-    const blobCount = 3 + ((col * 3 + row * 5) % 3);
-    for (let b = 0; b < blobCount; b++) {
-      const blobR = ts * 0.08 + ((col * 7 + b * 11 + row) % 5) * ts * 0.015;
-      const bx = gx + ((col * 13 + b * 19 + row * 3) % Math.max(gw - 8, 1)) + 4;
-      const by = gy + ((row * 11 + b * 17 + col * 5) % Math.max(gh - 8, 1)) + 4;
-      const bColor = b % 3 === 0 ? COLORS.greenDark : (b % 3 === 1 ? greenVar : COLORS.greenLight);
-      ctx.fillStyle = bColor;
-      ctx.beginPath();
-      ctx.arc(bx, by, blobR, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // Layer 5: Flower details (tiny colored dots)
-    const flowerSeed = col * 23 + row * 31;
-    const flowerCount = 1 + (flowerSeed % 3);
-    for (let f = 0; f < flowerCount; f++) {
-      const fx = gx + ((flowerSeed + f * 29) % Math.max(gw - 6, 1)) + 3;
-      const fy = gy + ((flowerSeed + f * 37) % Math.max(gh - 6, 1)) + 3;
-      ctx.fillStyle = f % 2 === 0 ? COLORS.flowerRed : COLORS.flowerYellow;
-      ctx.beginPath();
-      ctx.arc(fx, fy, Math.max(1, ts * 0.018), 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
-  // Layer 3: Palm trees on edge tiles
-  if (isEdge && ts >= 50) {
-    const palmSeed = col * 17 + row * 29;
-    const palmCount = 1 + (palmSeed % 2);
-    for (let p = 0; p < palmCount; p++) {
-      // Position palm near water edge
-      let px, py;
-      if (hasWN && p === 0) { px = x + ts * 0.3 + (palmSeed % Math.round(ts * 0.4)); py = y + ts * 0.25; }
-      else if (hasWS && p === 0) { px = x + ts * 0.3 + (palmSeed % Math.round(ts * 0.4)); py = y + ts * 0.75; }
-      else if (hasWW) { px = x + ts * 0.25; py = y + ts * 0.3 + (palmSeed % Math.round(ts * 0.4)); }
-      else if (hasWE) { px = x + ts * 0.75; py = y + ts * 0.3 + (palmSeed % Math.round(ts * 0.4)); }
-      else { px = x + ts * 0.5; py = y + ts * 0.5; }
-
-      drawPalmTree(ctx, px, py, ts);
-    }
-  }
-
-  // Layer 4: Cliff edges (dark shadow on water-facing edges with 2+ adjacent water)
-  if (waterSides >= 2) {
-    ctx.strokeStyle = COLORS.cliffBrown;
-    ctx.lineWidth = Math.max(1.5, ts * 0.025);
-    if (hasWN) {
-      ctx.beginPath(); ctx.moveTo(x + 2, y + 1); ctx.lineTo(x + ts - 2, y + 1); ctx.stroke();
-    }
-    if (hasWS) {
-      ctx.beginPath(); ctx.moveTo(x + 2, y + ts - 1); ctx.lineTo(x + ts - 2, y + ts - 1); ctx.stroke();
-    }
-    if (hasWW) {
-      ctx.beginPath(); ctx.moveTo(x + 1, y + 2); ctx.lineTo(x + 1, y + ts - 2); ctx.stroke();
-    }
-    if (hasWE) {
-      ctx.beginPath(); ctx.moveTo(x + ts - 1, y + 2); ctx.lineTo(x + ts - 1, y + ts - 2); ctx.stroke();
-    }
-  }
-}
 
 function drawPalmTree(ctx, px, py, ts) {
   const trunkH = ts * 0.2;
@@ -553,32 +743,6 @@ function drawPalmTree(ctx, px, py, ts) {
     ctx.stroke();
   }
   ctx.lineCap = 'butt';
-}
-
-function drawMerchantTile(ctx, x, y, col, row, ts, islandSet) {
-  // Sandy base with warmer tone
-  ctx.fillStyle = COLORS.merchantSand;
-  ctx.fillRect(x, y, ts, ts);
-
-  // Vegetation area
-  const inset = Math.round(ts * 0.1);
-  ctx.fillStyle = COLORS.merchantGreen;
-  roundRect(ctx, x + inset, y + inset, ts - inset * 2, ts - inset * 2, Math.round(ts * 0.08));
-  ctx.fill();
-
-  // Darker vegetation patches
-  const seed = col * 11 + row * 7;
-  ctx.fillStyle = COLORS.greenDark;
-  for (let i = 0; i < 2; i++) {
-    const sx = x + inset + ((seed + i * 17) % Math.max(ts - inset * 2 - 8, 1)) + 4;
-    const sy = y + inset + ((seed + i * 23) % Math.max(ts - inset * 2 - 8, 1)) + 4;
-    ctx.beginPath();
-    ctx.arc(sx, sy, ts * 0.05, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  // Market stall
-  drawMarketStall(ctx, x + ts / 2, y + ts / 2, ts);
 }
 
 function drawMarketStall(ctx, cx, cy, ts) {
