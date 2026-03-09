@@ -53,6 +53,7 @@ export function createGameState(players, playerCount, settings = {}) {
     settings: {
       shiplessMode: settings.shiplessMode || SHIPLESS_MODES.RULEBOOK,
       bribeMode: settings.bribeMode || BRIBE_MODES.NONE,
+      ppToWin: settings.ppToWin || WIN_POINTS,
     },
   };
 
@@ -679,7 +680,7 @@ function applyTreasureCard(state, playerId, card) {
     case 'plunder_point': {
       player.plunderPointCards += card.amount;
       const total = calculatePlunderPoints(state, playerId);
-      if (total >= WIN_POINTS) {
+      if (total >= state.settings.ppToWin) {
         state.phase = GAME_PHASES.GAME_OVER;
         state.winner = playerId;
       }
@@ -911,7 +912,7 @@ export function buildItem(state, playerId, buildType, targetShipId) {
   if (buildType === 'plunderPoint') {
     player.plunderPointCards++;
     const total = calculatePlunderPoints(state, playerId);
-    if (total >= WIN_POINTS) {
+    if (total >= state.settings.ppToWin) {
       state.phase = GAME_PHASES.GAME_OVER;
       state.winner = playerId;
     }
@@ -1062,7 +1063,7 @@ function executeIslandCombat(state, playerId, shipId, islandId) {
         islandOwner.plunderPointCards++;
         ownerGotPP = true;
         const total = calculatePlunderPoints(state, island.owner);
-        if (total >= WIN_POINTS) {
+        if (total >= state.settings.ppToWin) {
           state.phase = GAME_PHASES.GAME_OVER;
           state.winner = island.owner;
         }
@@ -1099,7 +1100,7 @@ function executeShipCombat(state, attackerId, attackerShipId, defenderShipId) {
       }
       attacker.plunderPointCards++;
       const total = calculatePlunderPoints(state, attackerId);
-      if (total >= WIN_POINTS) {
+      if (total >= state.settings.ppToWin) {
         state.phase = GAME_PHASES.GAME_OVER;
         state.winner = attackerId;
       }
@@ -1115,7 +1116,7 @@ function executeShipCombat(state, attackerId, attackerShipId, defenderShipId) {
       }
       defender.plunderPointCards++;
       const total = calculatePlunderPoints(state, defender.id);
-      if (total >= WIN_POINTS) {
+      if (total >= state.settings.ppToWin) {
         state.phase = GAME_PHASES.GAME_OVER;
         state.winner = defender.id;
       }

@@ -304,8 +304,8 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
   if (!gameState) return <div className="text-pirate-tan p-4">Loading game...</div>;
 
   const currentPlayer = gameState.players[currentPlayerId];
-  const sortedPlayers = Object.values(gameState.players);
   const ppToWin = gameState.settings?.ppToWin || 10;
+  const sortedPlayers = Object.values(gameState.players).slice().sort((a, b) => b.plunderPoints - a.plunderPoints);
 
   return (
     <div className="h-screen flex flex-col bg-pirate-deepSea overflow-hidden">
@@ -331,21 +331,20 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
           </div>
         </div>
 
-        {/* Right: Player PP bars */}
-        <div className="flex items-center gap-4">
+        {/* Right: Plunder Points leaderboard */}
+        <div className="flex items-center gap-3">
+          <span className="text-pirate-tan/50 text-[10px] mr-1">Plunder Points</span>
           {sortedPlayers.map(p => {
-            const pct = Math.min(100, (p.plunderPoints / ppToWin) * 100);
             const color = getColorHex(p.color);
             return (
-              <div key={p.id} className="flex items-center gap-2" title={`${p.name}: ${p.plunderPoints}/${ppToWin} PP`}>
-                <div className="w-3.5 h-3.5 rounded-full border-2 border-white/20" style={{ backgroundColor: color }} />
-                <div className="w-20 h-2 rounded-full bg-pirate-dark/60 overflow-hidden">
-                  <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: color }} />
-                </div>
-                <span className="text-[11px] font-mono text-white/80">{p.plunderPoints}</span>
+              <div key={p.id} className="flex items-center gap-1.5">
+                <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
+                <span className="text-[11px] text-white/70 max-w-[60px] truncate">{p.name}</span>
+                <span className="text-[11px] font-bold text-white">{p.plunderPoints}</span>
               </div>
             );
           })}
+          <span className="text-pirate-tan/40 text-[10px] ml-1">/ {ppToWin} to win</span>
         </div>
       </div>
 

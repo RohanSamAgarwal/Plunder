@@ -330,14 +330,8 @@ export default function ActionPanel({
         <div className="px-3 py-2 bg-pirate-dark/60 flex items-center justify-between">
           <span className="text-[11px] text-pirate-tan/60 uppercase tracking-wider font-semibold">Plunder Points</span>
           <span className="text-xl font-bold font-pirate text-pirate-gold">
-            {myPlayer.plunderPoints}/{gameState.settings?.ppToWin || 10}
+            {myPlayer.plunderPoints}<span className="text-sm text-pirate-tan/50 font-normal">/{gameState.settings?.ppToWin || 10}</span>
           </span>
-        </div>
-        <div className="px-3 pb-2 pt-1 bg-pirate-dark/60">
-          <div className="w-full h-2 rounded-full bg-pirate-dark/80 overflow-hidden">
-            <div className="h-full rounded-full bg-pirate-gold transition-all duration-500"
-                 style={{ width: `${Math.min(100, (myPlayer.plunderPoints / (gameState.settings?.ppToWin || 10)) * 100)}%` }} />
-          </div>
         </div>
       </div>
 

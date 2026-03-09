@@ -49,6 +49,7 @@ export function createRoom(hostSocketId, hostName) {
     settings: {
       shiplessMode: SHIPLESS_MODES.RULEBOOK,
       bribeMode: BRIBE_MODES.NONE,
+      ppToWin: 10,
     },
   };
 
@@ -154,6 +155,12 @@ export function updateSettings(code, playerId, settings) {
   }
   if (settings.bribeMode && Object.values(BRIBE_MODES).includes(settings.bribeMode)) {
     room.settings.bribeMode = settings.bribeMode;
+  }
+  if (settings.ppToWin !== undefined) {
+    const val = parseInt(settings.ppToWin, 10);
+    if (!isNaN(val) && val >= 0 && val <= 99) {
+      room.settings.ppToWin = val;
+    }
   }
 
   return { success: true, settings: room.settings };

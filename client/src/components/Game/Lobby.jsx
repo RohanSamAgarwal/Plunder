@@ -158,6 +158,27 @@ export default function Lobby({ room, playerInfo, messages, onStartGame }) {
                 <option value="ruthless">Ruthless (Bribe + Attack Possible)</option>
               </select>
             </div>
+            <div>
+              <label className="block text-xs text-pirate-tan/70 mb-1">
+                Points to Win
+              </label>
+              <input
+                type="number"
+                min={0}
+                max={99}
+                value={room.settings?.ppToWin ?? 10}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  if (!isNaN(val) && val >= 0 && val <= 99) {
+                    emit('update-settings', { settings: { ppToWin: val } });
+                  }
+                }}
+                disabled={!isHost}
+                className={`w-full bg-pirate-dark border border-pirate-tan/30 rounded px-3 py-2
+                           text-sm text-white focus:outline-none focus:border-pirate-gold
+                           ${!isHost ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+              />
+            </div>
           </div>
         </div>
 

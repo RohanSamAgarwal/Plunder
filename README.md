@@ -108,12 +108,13 @@ plunder/
 - ✅ Treasure cards displayed to all players with dismiss popup
 - ✅ Treasure deck auto-reshuffle with 5-second card animation
 - ✅ Tabbed sidebar (Controls / Chat & Log) with unread message badge
+- ✅ Top bar plunder points leaderboard with player names, sorted by score
+- ✅ Configurable win points (0-99) in lobby settings
 
 ### To Do
 - 🔲 Add animations for events (attacks, trades, etc.)
 - 🔲 Ships need clearer visuals for masts/cannons/lives
 - 🔲 Redesign board + add zoom in/out
-- 🔲 Plunder point counter should show names + use more top bar space
 
 ## Tech Stack
 - **Frontend**: React 18, Vite, Tailwind CSS, HTML5 Canvas
