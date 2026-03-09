@@ -243,12 +243,19 @@ export default function ActionPanel({
           <div className="text-[10px] text-pirate-tan/60 text-right">
             Selected: {Object.values(stormCostDiscards).reduce((s, v) => s + v, 0)} / {pendingStormCost.amount}
           </div>
-          <button onClick={resolveStormCostDiscard}
-            disabled={Object.values(stormCostDiscards).reduce((s, v) => s + v, 0) !== pendingStormCost.amount}
-            className="w-full bg-cyan-700 text-white py-1.5 rounded text-xs font-bold
-                       hover:bg-cyan-600 disabled:opacity-40 disabled:cursor-not-allowed transition">
-            Pay Storm Toll
-          </button>
+          <div className="flex gap-2">
+            <button onClick={resolveStormCostDiscard}
+              disabled={Object.values(stormCostDiscards).reduce((s, v) => s + v, 0) !== pendingStormCost.amount}
+              className="flex-1 bg-cyan-700 text-white py-1.5 rounded text-xs font-bold
+                         hover:bg-cyan-600 disabled:opacity-40 disabled:cursor-not-allowed transition">
+              Pay Storm Toll
+            </button>
+            <button onClick={() => emit('cancel-storm-move', {})}
+              className="flex-1 bg-gray-600 text-white py-1.5 rounded text-xs font-bold
+                         hover:bg-gray-500 transition">
+              Cancel Move
+            </button>
+          </div>
         </div>
       )}
 

@@ -569,6 +569,9 @@ export function moveShip(state, playerId, shipId, path) {
     return { error: `Need ${stormCost} resources to enter/exit the storm` };
   }
 
+  // Save original position before applying movement (for storm cancel)
+  const originalPosition = { ...ship.position };
+
   // Apply movement
   ship.position = current;
   ship.movesUsed += moveCost;
@@ -576,7 +579,13 @@ export function moveShip(state, playerId, shipId, path) {
 
   // If storm cost is owed, set pending state for player to choose which resources to pay
   if (stormCost > 0) {
-    state.pendingStormCost = { playerId, amount: stormCost };
+    state.pendingStormCost = {
+      playerId,
+      amount: stormCost,
+      shipId,
+      previousPosition: originalPosition,
+      moveCost,
+    };
   }
 
   // Check for treasure tokens along the path (player can choose to pick up)
@@ -834,6 +843,28 @@ export function resolveStormCost(state, playerId, discards) {
 
   state.pendingStormCost = null;
   return { success: true, discarded: discards };
+}
+
+// Cancel a storm move — undo the ship movement and restore move points
+export function cancelStormMove(state, playerId) {
+  if (!state.pendingStormCost) {
+    return { error: 'No pending storm cost' };
+  }
+  if (state.pendingStormCost.playerId !== playerId) {
+    return { error: 'Not your pending storm cost' };
+  }
+
+  const player = state.players[playerId];
+  const ship = player.ships.find(s => s.id === state.pendingStormCost.shipId);
+  if (!ship) return { error: 'Ship not found' };
+
+  // Undo the move
+  ship.position = state.pendingStormCost.previousPosition;
+  ship.movesUsed -= state.pendingStormCost.moveCost;
+  state.movePointsRemaining += state.pendingStormCost.moveCost;
+
+  state.pendingStormCost = null;
+  return { success: true };
 }
 
 function isOccupied(state, pos, excludeShipId) {

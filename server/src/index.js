@@ -15,7 +15,7 @@ import {
   createGameState, getPublicGameState, pickStartingIsland,
   getAvailableStartingIslands, drawResources, rollSailingDie,
   moveShip, buildItem, attackIsland, attackShip, endTurn, calculatePlunderPoints,
-  collectTreasure, resolveTreasureSteal, resolveTreasureStormDiscard, resolveStormCost,
+  collectTreasure, resolveTreasureSteal, resolveTreasureStormDiscard, resolveStormCost, cancelStormMove,
   merchantBankTrade, canTrade, proposeTreaty, resolveTreaty,
   shiplessRoll, shiplessExchangePP, shiplessExchangeGold,
   shiplessDisownIsland, shiplessChooseResource,
@@ -494,6 +494,20 @@ io.on('connection', (socket) => {
     }
 
     const result = resolveStormCost(state, found.player.id, discards);
+    broadcastGameState(found.room);
+    callback?.(result);
+  });
+
+  socket.on('cancel-storm-move', (_, callback) => {
+    const found = getRoomBySocketId(socket.id);
+    if (!found || !found.room.gameState) return callback?.({ error: 'No game' });
+
+    const state = found.room.gameState;
+    if (state.turnOrder[state.currentPlayerIndex] !== found.player.id) {
+      return callback?.({ error: 'Not your turn' });
+    }
+
+    const result = cancelStormMove(state, found.player.id);
     broadcastGameState(found.room);
     callback?.(result);
   });
