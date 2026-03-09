@@ -29,7 +29,7 @@ const RESOURCE_META = {
 };
 const EMPTY_RESOURCES = { wood: 0, iron: 0, rum: 0, gold: 0 };
 
-export default function GameView({ gameState, playerInfo, messages, pendingTrade, pendingTreaty, pendingAttackBribe, attackBribeDecision, roomCode }) {
+export default function GameView({ gameState, playerInfo, messages, pendingTrade, pendingTreaty, pendingAttackBribe, attackBribeDecision, drawnCard, onDismissCard, deckShuffling, roomCode }) {
   const { emit } = useSocketContext();
   const canvasRef = useRef(null);
   const [selectedShip, setSelectedShip] = useState(null);
@@ -330,6 +330,46 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
         </div>
       </div>
 
+      {/* ═══ Deck Shuffling Overlay ═══ */}
+      {deckShuffling && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/60">
+          <div className="text-center">
+            <div className="relative w-32 h-20 mx-auto mb-4">
+              {[0, 1, 2, 3, 4].map(i => (
+                <div key={i}
+                  className="absolute w-14 h-20 rounded-md border-2 border-pirate-gold/60 bg-pirate-brown shadow-lg"
+                  style={{
+                    left: '50%',
+                    top: 0,
+                    transform: `translateX(-50%)`,
+                    animation: `shuffleCard${i % 2 === 0 ? 'Left' : 'Right'} 0.8s ease-in-out ${i * 0.15}s infinite`,
+                    zIndex: 5 - i,
+                  }}>
+                  <div className="w-full h-full flex items-center justify-center text-pirate-gold text-xl font-pirate">
+                    X
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="text-pirate-gold font-pirate text-xl animate-pulse">
+              Shuffling the treasure deck...
+            </p>
+          </div>
+          <style>{`
+            @keyframes shuffleCardLeft {
+              0%, 100% { transform: translateX(-50%) rotate(0deg); }
+              25% { transform: translateX(-130%) rotate(-15deg); }
+              50% { transform: translateX(-50%) rotate(0deg); }
+            }
+            @keyframes shuffleCardRight {
+              0%, 100% { transform: translateX(-50%) rotate(0deg); }
+              25% { transform: translateX(30%) rotate(15deg); }
+              50% { transform: translateX(-50%) rotate(0deg); }
+            }
+          `}</style>
+        </div>
+      )}
+
       {/* ═══ Notification ═══ */}
       {notification && (
         <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50
@@ -458,6 +498,66 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
               Cancel Attack
             </button>
           </div>
+        </div>
+      )}
+
+      {/* ═══ Drawn Treasure Card Display ═══ */}
+      {drawnCard && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50
+                        bg-pirate-brown border-2 border-pirate-gold p-5 rounded-lg shadow-lg shadow-black/50 w-80">
+          <p className="text-sm text-pirate-tan mb-3 text-center">
+            <strong className="text-white">{drawnCard.playerName}</strong> has drawn...
+          </p>
+          <div className={`rounded-lg p-4 text-center border ${
+            ['steal', 'storm', 'end_turn', 'lose_resource'].includes(drawnCard.card.type)
+              ? 'bg-red-900/30 border-red-500/40'
+              : 'bg-amber-900/30 border-amber-500/40'
+          }`}>
+            <div className="text-2xl mb-2">
+              {drawnCard.card.type === 'gold' && '\u{1FA99}'}
+              {drawnCard.card.type === 'resource' && '\u{1F4E6}'}
+              {drawnCard.card.type === 'plunder_point' && '\u2620\uFE0F'}
+              {drawnCard.card.type === 'steal' && '\u{1F5E1}\uFE0F'}
+              {drawnCard.card.type === 'storm' && '\u26C8\uFE0F'}
+              {drawnCard.card.type === 'end_turn' && '\u{1F6D1}'}
+              {drawnCard.card.type === 'lose_resource' && '\u{1F4A8}'}
+              {drawnCard.card.type === 'free_cannon' && '\u{1F4A3}'}
+              {drawnCard.card.type === 'free_mast' && '\u26F5'}
+              {drawnCard.card.type === 'free_life' && '\u2764\uFE0F'}
+            </div>
+            <h3 className={`font-pirate text-lg mb-1 ${
+              ['steal', 'storm', 'end_turn', 'lose_resource'].includes(drawnCard.card.type)
+                ? 'text-red-400'
+                : 'text-pirate-gold'
+            }`}>
+              {drawnCard.card.type === 'gold' && 'Gold!'}
+              {drawnCard.card.type === 'resource' && 'Supplies!'}
+              {drawnCard.card.type === 'plunder_point' && 'Plunder Point!'}
+              {drawnCard.card.type === 'steal' && 'Steal!'}
+              {drawnCard.card.type === 'storm' && 'Storm!'}
+              {drawnCard.card.type === 'end_turn' && 'Turn Ends!'}
+              {drawnCard.card.type === 'lose_resource' && 'Loss!'}
+              {drawnCard.card.type === 'free_cannon' && 'Free Cannon!'}
+              {drawnCard.card.type === 'free_mast' && 'Free Mast!'}
+              {drawnCard.card.type === 'free_life' && 'Free Life Peg!'}
+            </h3>
+            {(() => {
+              const parts = drawnCard.card.description.split(/(?<=!)\s+/);
+              return parts.length > 1 ? (
+                <>
+                  <p className="text-sm text-white font-bold">{parts[0]}</p>
+                  <p className="text-xs text-pirate-tan mt-1">{parts.slice(1).join(' ')}</p>
+                </>
+              ) : (
+                <p className="text-sm text-pirate-tan">{drawnCard.card.description}</p>
+              );
+            })()}
+          </div>
+          <button onClick={onDismissCard}
+            className="w-full mt-3 bg-pirate-dark hover:bg-pirate-dark/80 border border-pirate-tan/30
+                       text-pirate-tan py-2 rounded text-sm transition">
+            Dismiss
+          </button>
         </div>
       )}
 

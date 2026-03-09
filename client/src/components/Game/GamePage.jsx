@@ -21,6 +21,7 @@ const EVENTS = {
   TRADE_PROPOSED: 'trade-proposed',
   TRADE_RESOLVED: 'trade-resolved',
   TREASURE_COLLECTED: 'treasure-collected',
+  TREASURE_DECK_RESHUFFLED: 'treasure-deck-reshuffled',
   TREATY_PROPOSED: 'treaty-proposed',
   TREATY_RESOLVED: 'treaty-resolved',
   ATTACK_BRIBE_PENDING: 'attack-bribe-pending',
@@ -52,6 +53,8 @@ export default function GamePage() {
   const [pendingTreaty, setPendingTreaty] = useState(null);
   const [pendingAttackBribe, setPendingAttackBribe] = useState(null);
   const [attackBribeDecision, setAttackBribeDecision] = useState(null);
+  const [drawnCard, setDrawnCard] = useState(null);
+  const [deckShuffling, setDeckShuffling] = useState(false);
   const [needsJoin, setNeedsJoin] = useState(false);
   const [joinName, setJoinName] = useState('');
   const [error, setError] = useState('');
@@ -138,6 +141,11 @@ export default function GamePage() {
       }),
       on(EVENTS.TREASURE_COLLECTED, ({ playerName, card }) => {
         addSystemMessage(`${playerName} found treasure: ${card.description}`);
+        setDrawnCard({ playerName, card });
+      }),
+      on(EVENTS.TREASURE_DECK_RESHUFFLED, () => {
+        setDeckShuffling(true);
+        setTimeout(() => setDeckShuffling(false), 5000);
       }),
       on(EVENTS.TREATY_PROPOSED, (treaty) => {
         setPendingTreaty(treaty);
@@ -271,6 +279,9 @@ export default function GamePage() {
       pendingTreaty={pendingTreaty}
       pendingAttackBribe={pendingAttackBribe}
       attackBribeDecision={attackBribeDecision}
+      drawnCard={drawnCard}
+      onDismissCard={() => setDrawnCard(null)}
+      deckShuffling={deckShuffling}
       roomCode={code}
     />
   );

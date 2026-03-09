@@ -57,7 +57,7 @@ export function createTreasureDeck() {
   return shuffle(deck);
 }
 
-function shuffle(array) {
+export function shuffle(array) {
   const arr = [...array];
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));

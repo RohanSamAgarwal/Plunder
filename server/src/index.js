@@ -435,6 +435,10 @@ io.on('connection', (socket) => {
       });
     }
 
+    if (result.reshuffled) {
+      io.to(found.room.code).emit(EVENTS.TREASURE_DECK_RESHUFFLED);
+    }
+
     // Handle end_turn treasure card
     if (result.endsTurn) {
       const endResult = endTurn(state);

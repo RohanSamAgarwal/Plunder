@@ -5,7 +5,7 @@ A faithful digital adaptation of the board game "Plunder: A Pirate's Life" suppo
 ## Quick Start
 
 ### Prerequisites
-- Node.js 18+ 
+- Node.js 18+
 - npm
 
 ### Local Development
@@ -102,16 +102,18 @@ plunder/
 - ✅ In-game chat
 - ✅ Trade proposals (accept/decline)
 
+### Implemented (Phase 5)
+- ✅ Attack bribe system (honor + ruthless modes)
+- ✅ Visual overhaul (board rendering, ship icons, edge wall barriers)
+- ✅ Treasure cards displayed to all players with dismiss popup
+- ✅ Treasure deck auto-reshuffle with 5-second card animation
+
 ### To Do
-- 🔲 Board panels from real game (awaiting photos)
-- 🔲 Merchant island bank trading
-- 🔲 Treaty negotiation UI
-- 🔲 Shipless captain flow
-- 🔲 Reconnection with session tokens
-- 🔲 2-player variant
-- 🔲 Sound effects + animations
-- 🔲 Mobile responsive layout
-- 🔲 Treasure card effects (steal, storm, end turn)
+- 🔲 Add animations for events (attacks, trades, etc.)
+- 🔲 Ships need clearer visuals for masts/cannons/lives
+- 🔲 Redesign board + add zoom in/out
+- 🔲 Chat/battle log should be toggleable/resizable
+- 🔲 Plunder point counter should show names + use more top bar space
 
 ## Tech Stack
 - **Frontend**: React 18, Vite, Tailwind CSS, HTML5 Canvas

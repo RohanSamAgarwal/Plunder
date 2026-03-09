@@ -6,7 +6,7 @@ import {
   MAX_CANNONS, MAX_MASTS, MAX_LIFE_PEGS, BRIBE_MODES,
 } from '../../shared/constants.js';
 import { generateBoard, getStartingIslands } from './board.js';
-import { createResourceDeck, createTreasureDeck, drawFromDeck } from './decks.js';
+import { createResourceDeck, createTreasureDeck, drawFromDeck, shuffle } from './decks.js';
 
 export function createGameState(players, playerCount, settings = {}) {
   const boardData = generateBoard(playerCount);
@@ -640,7 +640,15 @@ export function collectTreasure(state, playerId, tokenId) {
   if (cards.length === 0) return { error: 'No treasure cards left' };
 
   const card = cards[0];
-  return applyTreasureCard(state, playerId, card);
+  const result = applyTreasureCard(state, playerId, card);
+
+  // Reshuffle deck after drawing the last card
+  if (state.treasureDeck.length === 0) {
+    state.treasureDeck = shuffle(createTreasureDeck());
+    result.reshuffled = true;
+  }
+
+  return result;
 }
 
 function relocateTreasureToken(state, tokenIndex) {
