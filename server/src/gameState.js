@@ -139,13 +139,23 @@ function isInStorm(state, pos) {
   return state.storm.tiles.some(t => t.col === pos.col && t.row === pos.row);
 }
 
-// Rulebook: if all ports of an island are covered by storm, no resources can be collected
-function isIslandFullyStormBlocked(state, islandId) {
+// Storm blocks resource collection when the island's center tile (skull/flag tile) is covered
+function isIslandStormBlocked(state, islandId) {
   if (!state.storm) return false;
   const island = state.islands[islandId];
-  if (!island || !island.port) return false;
-  // Check if the island's port is in the storm
-  return isInStorm(state, island.port);
+  if (!island || !island.tiles || island.tiles.length === 0) return false;
+
+  // Find the island tile closest to the geometric center (same logic as client renderer)
+  const cx = island.tiles.reduce((s, t) => s + t.col, 0) / island.tiles.length;
+  const cy = island.tiles.reduce((s, t) => s + t.row, 0) / island.tiles.length;
+  let bestTile = island.tiles[0];
+  let bestDist = Infinity;
+  for (const t of island.tiles) {
+    const d = (t.col + 0.5 - cx) ** 2 + (t.row + 0.5 - cy) ** 2;
+    if (d < bestDist) { bestDist = d; bestTile = t; }
+  }
+
+  return isInStorm(state, bestTile);
 }
 
 // ── Wall Barrier Helpers ───────────────────────────────────────
@@ -282,11 +292,11 @@ export function drawResources(state, playerId) {
     return handleShiplessDraw(state, playerId);
   }
 
-  // Rulebook: storm-blocked islands (all ports covered) don't generate resources
+  // Storm-blocked islands (skull/flag tile covered by storm) don't generate resources
   let drawCount = 0;
   const blockedIslands = [];
   for (const islandId of player.ownedIslands) {
-    if (isIslandFullyStormBlocked(state, islandId)) {
+    if (isIslandStormBlocked(state, islandId)) {
       blockedIslands.push(islandId);
     } else {
       drawCount++;
@@ -306,10 +316,10 @@ function handleShiplessDraw(state, playerId) {
   const player = state.players[playerId];
   const mode = state.settings.shiplessMode;
 
-  // Rulebook: storm-blocked islands don't generate resources even for shipless captains
+  // Storm-blocked islands (skull/flag tile covered) don't generate resources even for shipless captains
   let drawCount = 0;
   for (const islandId of player.ownedIslands) {
-    if (!isIslandFullyStormBlocked(state, islandId)) drawCount++;
+    if (!isIslandStormBlocked(state, islandId)) drawCount++;
   }
   const drawn = drawFromDeck(state.resourceDeck, drawCount);
   for (const r of drawn) {
