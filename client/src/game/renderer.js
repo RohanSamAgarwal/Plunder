@@ -1030,151 +1030,92 @@ function drawLandBarrier(ctx, x, y, ts) {
 // ── Decorations ────────────────────────────────────────────────
 
 function drawSkullBadge(ctx, x, y, skulls, ts) {
-  const skullSize = Math.round(ts * 0.32);
-  const spacing = Math.round(ts * 0.34);
-  const badgeW = skulls * spacing + Math.round(ts * 0.16);
-  const badgeH = Math.round(ts * 0.4);
-  const bx = x + ts / 2 - badgeW / 2;
-  const by = y + Math.round(ts * 0.04);
+  const skullSize = Math.round(ts * 0.34);
+  const spacing = Math.round(ts * 0.36);
+  const totalW = skulls * spacing;
+  const startX = x + ts / 2 - totalW / 2 + spacing / 2;
+  const sy = y + Math.round(ts * 0.18);
 
-  // Badge background
-  ctx.fillStyle = 'rgba(0,0,0,0.65)';
-  roundRect(ctx, bx, by, badgeW, badgeH, Math.round(ts * 0.06));
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(200, 180, 140, 0.3)';
-  ctx.lineWidth = Math.max(1, ts * 0.015);
-  ctx.stroke();
-
-  // Draw skull icons
+  // No background — skulls drawn directly on island
   for (let i = 0; i < skulls; i++) {
-    const sx = bx + Math.round(ts * 0.08) + i * spacing + spacing / 2;
-    const sy = by + badgeH / 2;
-    drawSkullIcon(ctx, sx, sy, skullSize);
+    drawSkullIcon(ctx, startX + i * spacing, sy, skullSize);
   }
 }
 
 function drawSkullIcon(ctx, cx, cy, size) {
-  const s = size; // shorthand
-  const outlineW = Math.max(1, s * 0.04);
-
-  // ── Crossbones (behind skull) ──
-  const boneLen = s * 0.42;
-  const boneW = s * 0.07;
-  const boneKnob = s * 0.055;
-  const boneY = cy + s * 0.22;
+  const s = size;
+  const lw = Math.max(1.2, s * 0.06);
 
   ctx.save();
-  ctx.strokeStyle = '#1a0f0a';
-  ctx.fillStyle = '#d8d0c0';
-  ctx.lineWidth = outlineW;
   ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
 
-  for (const angle of [-35, 35]) {
-    ctx.save();
-    ctx.translate(cx, boneY);
-    ctx.rotate(angle * Math.PI / 180);
-    // Bone shaft
-    ctx.beginPath();
-    ctx.moveTo(-boneLen, 0);
-    ctx.lineTo(boneLen, 0);
-    ctx.lineWidth = boneW;
-    ctx.strokeStyle = '#d8d0c0';
-    ctx.stroke();
-    // Outline the shaft
-    ctx.strokeStyle = '#1a0f0a';
-    ctx.lineWidth = outlineW;
-    ctx.beginPath();
-    ctx.moveTo(-boneLen, -boneW / 2);
-    ctx.lineTo(boneLen, -boneW / 2);
-    ctx.moveTo(-boneLen, boneW / 2);
-    ctx.lineTo(boneLen, boneW / 2);
-    ctx.stroke();
-    // Knobs at each end
-    for (const dir of [-1, 1]) {
-      const kx = dir * boneLen;
-      ctx.fillStyle = '#d8d0c0';
-      ctx.beginPath();
-      ctx.arc(kx - dir * boneKnob * 0.2, -boneKnob * 0.6, boneKnob, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = '#1a0f0a';
-      ctx.lineWidth = outlineW;
-      ctx.stroke();
-      ctx.fillStyle = '#d8d0c0';
-      ctx.beginPath();
-      ctx.arc(kx - dir * boneKnob * 0.2, boneKnob * 0.6, boneKnob, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
+  // Drop shadow for readability on any background
+  ctx.shadowColor = 'rgba(0,0,0,0.5)';
+  ctx.shadowBlur = s * 0.12;
+  ctx.shadowOffsetY = s * 0.03;
 
-  // ── Skull ──
-  ctx.lineWidth = outlineW;
-  ctx.strokeStyle = '#1a0f0a';
-
-  // Cranium (large dome)
-  const crTop = cy - s * 0.28;
-  const crW = s * 0.32;
-  const crH = s * 0.30;
-
-  ctx.fillStyle = '#d8d0c0';
+  // ── Head (very round) ──
+  const headR = s * 0.36;
+  const headY = cy - s * 0.05;
+  ctx.fillStyle = '#ede6d6';
+  ctx.strokeStyle = '#2a1f14';
+  ctx.lineWidth = lw;
   ctx.beginPath();
-  ctx.ellipse(cx, crTop + crH * 0.4, crW, crH, 0, 0, Math.PI * 2);
+  ctx.arc(cx, headY, headR, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
 
-  // Jaw / lower face (narrower, overlaps bottom of cranium)
-  const jawY = cy + s * 0.02;
-  const jawW = s * 0.24;
-  const jawH = s * 0.14;
-  ctx.fillStyle = '#d8d0c0';
+  // ── Jaw (rounded trapezoid, overlaps bottom of head) ──
+  ctx.shadowColor = 'transparent'; // no double shadow
+  const jawTop = headY + headR * 0.55;
+  const jawBot = headY + headR * 1.25;
+  const jawWTop = headR * 0.75;
+  const jawWBot = headR * 0.5;
+  ctx.fillStyle = '#ede6d6';
   ctx.beginPath();
-  ctx.moveTo(cx - jawW, jawY - jawH * 0.3);
-  ctx.quadraticCurveTo(cx - jawW * 0.9, jawY + jawH, cx, jawY + jawH * 1.1);
-  ctx.quadraticCurveTo(cx + jawW * 0.9, jawY + jawH, cx + jawW, jawY - jawH * 0.3);
+  ctx.moveTo(cx - jawWTop, jawTop);
+  ctx.quadraticCurveTo(cx - jawWBot * 1.1, jawBot, cx, jawBot + s * 0.02);
+  ctx.quadraticCurveTo(cx + jawWBot * 1.1, jawBot, cx + jawWTop, jawTop);
   ctx.closePath();
   ctx.fill();
+  ctx.strokeStyle = '#2a1f14';
+  ctx.lineWidth = lw;
   ctx.stroke();
 
-  // Eye sockets (angular/tapered)
-  ctx.fillStyle = '#1a0f0a';
+  // Cover the line between head and jaw (fill over the seam)
+  ctx.fillStyle = '#ede6d6';
+  ctx.beginPath();
+  ctx.arc(cx, headY, headR - lw * 0.6, 0.15 * Math.PI, 0.85 * Math.PI);
+  ctx.closePath();
+  ctx.fill();
+
+  // ── Eyes (large circles) ──
+  const eyeR = s * 0.1;
+  const eyeY = headY - s * 0.02;
+  const eyeSpread = s * 0.15;
+  ctx.fillStyle = '#2a1f14';
   for (const dir of [-1, 1]) {
-    const ex = cx + dir * s * 0.13;
-    const ey = cy - s * 0.06;
-    const ew = s * 0.11;
-    const eh = s * 0.09;
     ctx.beginPath();
-    ctx.moveTo(ex, ey - eh);            // top
-    ctx.lineTo(ex + ew, ey);            // right
-    ctx.lineTo(ex + ew * 0.3, ey + eh * 0.7); // bottom-right
-    ctx.lineTo(ex - ew * 0.3, ey + eh * 0.7); // bottom-left
-    ctx.lineTo(ex - ew, ey);            // left
-    ctx.closePath();
+    ctx.arc(cx + dir * eyeSpread, eyeY, eyeR, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  // Nose hole (inverted triangle)
+  // ── Nose (small upward-pointing dot/triangle) ──
+  const noseY = headY + s * 0.1;
   ctx.beginPath();
-  ctx.moveTo(cx, cy + s * 0.02);
-  ctx.lineTo(cx - s * 0.05, cy + s * 0.1);
-  ctx.lineTo(cx + s * 0.05, cy + s * 0.1);
-  ctx.closePath();
+  ctx.arc(cx, noseY, s * 0.04, 0, Math.PI * 2);
   ctx.fill();
 
-  // Teeth (vertical lines across jaw)
-  ctx.strokeStyle = '#1a0f0a';
-  ctx.lineWidth = Math.max(0.8, s * 0.025);
-  const teethY = cy + s * 0.1;
-  const teethH = s * 0.08;
-  const teethCount = 5;
-  const teethSpan = s * 0.22;
-  for (let i = 0; i < teethCount; i++) {
-    const tx = cx - teethSpan / 2 + (i + 0.5) * (teethSpan / teethCount);
-    ctx.beginPath();
-    ctx.moveTo(tx, teethY);
-    ctx.lineTo(tx, teethY + teethH);
-    ctx.stroke();
-  }
+  // ── Smile (curved line) ──
+  ctx.strokeStyle = '#2a1f14';
+  ctx.lineWidth = Math.max(1, s * 0.04);
+  const smileY = headY + s * 0.2;
+  const smileW = s * 0.16;
+  ctx.beginPath();
+  ctx.moveTo(cx - smileW, smileY);
+  ctx.quadraticCurveTo(cx, smileY + s * 0.08, cx + smileW, smileY);
+  ctx.stroke();
 
   ctx.restore();
 }
