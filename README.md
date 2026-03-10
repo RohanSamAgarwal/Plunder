@@ -119,10 +119,10 @@ plunder/
 - ✅ Water depth gradients (shallow turquoise near islands → deep blue in open ocean)
 - ✅ Shore rings and beach edges around islands
 - ✅ Subtle dashed grid lines on water only
+- ✅ Board zoom in/out (mouse wheel) with right-click drag panning
 
 ### To Do
 - 🔲 Ships need clearer visuals for masts/cannons/lives
-- 🔲 Add zoom in/out for board
 
 ## Tech Stack
 - **Frontend**: React 18, Vite, Tailwind CSS, HTML5 Canvas

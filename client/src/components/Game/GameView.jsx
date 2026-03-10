@@ -6,6 +6,9 @@ import ChatLog from './ChatLog';
 
 const SIDEBAR_W = 400;
 const TOP_BAR_H = 52;
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 2.5;
+const ZOOM_STEP = 0.1;
 
 const EVENTS = {
   PICK_STARTING_ISLAND: 'pick-starting-island',
@@ -32,7 +35,9 @@ const EMPTY_RESOURCES = { wood: 0, iron: 0, rum: 0, gold: 0 };
 export default function GameView({ gameState, playerInfo, messages, pendingTrade, pendingTreaty, pendingAttackBribe, attackBribeDecision, drawnCard, onDismissCard, deckShuffling, animations, roomCode }) {
   const { emit } = useSocketContext();
   const canvasRef = useRef(null);
+  const boardContainerRef = useRef(null);
   const [selectedShip, setSelectedShip] = useState(null);
+  const [zoomLevel, setZoomLevel] = useState(1.0);
   const [hoveredTile, setHoveredTile] = useState(null);
   const [validMoves, setValidMoves] = useState([]);
   const [notification, setNotification] = useState('');
@@ -71,6 +76,92 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
+  // Zoom: derive effective layout from base layout × zoomLevel
+  const zoomedLayout = useMemo(() => ({
+    tileSize: Math.round(layout.tileSize * zoomLevel),
+    gridPad: layout.gridPad,
+  }), [layout, zoomLevel]);
+
+  // Wheel zoom handler — must use useEffect with passive:false to allow preventDefault
+  useEffect(() => {
+    const container = boardContainerRef.current;
+    if (!container) return;
+
+    function handleWheel(e) {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+
+      const scrollLeft = container.scrollLeft;
+      const scrollTop = container.scrollTop;
+      const viewCenterX = scrollLeft + container.clientWidth / 2;
+      const viewCenterY = scrollTop + container.clientHeight / 2;
+
+      setZoomLevel(prev => {
+        const next = Math.round((prev + delta) * 10) / 10;
+        const clamped = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, next));
+        if (clamped !== prev) {
+          const ratio = clamped / prev;
+          requestAnimationFrame(() => {
+            container.scrollLeft = viewCenterX * ratio - container.clientWidth / 2;
+            container.scrollTop = viewCenterY * ratio - container.clientHeight / 2;
+          });
+        }
+        return clamped;
+      });
+    }
+
+    // Right-click drag to pan
+    let isPanning = false;
+    let panStartX = 0, panStartY = 0;
+    let scrollStartX = 0, scrollStartY = 0;
+
+    function handleMouseDown(e) {
+      if (e.button !== 2) return; // right-click only
+      // Only pan if content overflows (board doesn't fit in viewport)
+      if (container.scrollWidth <= container.clientWidth && container.scrollHeight <= container.clientHeight) return;
+      isPanning = true;
+      panStartX = e.clientX;
+      panStartY = e.clientY;
+      scrollStartX = container.scrollLeft;
+      scrollStartY = container.scrollTop;
+      container.style.cursor = 'grabbing';
+      e.preventDefault();
+    }
+
+    function handleMouseMove(e) {
+      if (!isPanning) return;
+      const dx = e.clientX - panStartX;
+      const dy = e.clientY - panStartY;
+      container.scrollLeft = scrollStartX - dx;
+      container.scrollTop = scrollStartY - dy;
+    }
+
+    function handleMouseUp(e) {
+      if (!isPanning) return;
+      isPanning = false;
+      container.style.cursor = '';
+    }
+
+    function handleContextMenu(e) {
+      if (container.scrollWidth > container.clientWidth || container.scrollHeight > container.clientHeight) {
+        e.preventDefault(); // suppress context menu when pannable
+      }
+    }
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    container.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    container.addEventListener('contextmenu', handleContextMenu);
+    return () => {
+      container.removeEventListener('wheel', handleWheel);
+      container.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      container.removeEventListener('contextmenu', handleContextMenu);
+    };
+  }, []);
+
   const myId = playerInfo?.playerId;
   const currentPlayerId = gameState?.currentPlayerId;
   const isMyTurn = currentPlayerId === myId;
@@ -78,16 +169,16 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
   const phase = gameState?.phase;
   const myPlayer = gameState?.players?.[myId];
 
-  // Canvas dimensions
+  // Canvas dimensions (use zoomed layout)
   const canvasW = useMemo(() => {
     if (!gameState) return 800;
-    return gameState.totalCols * layout.tileSize + layout.gridPad * 2;
-  }, [gameState?.totalCols, layout]);
+    return gameState.totalCols * zoomedLayout.tileSize + zoomedLayout.gridPad * 2;
+  }, [gameState?.totalCols, zoomedLayout]);
 
   const canvasH = useMemo(() => {
     if (!gameState) return 600;
-    return gameState.totalRows * layout.tileSize + layout.gridPad * 2;
-  }, [gameState?.totalRows, layout]);
+    return gameState.totalRows * zoomedLayout.tileSize + zoomedLayout.gridPad * 2;
+  }, [gameState?.totalRows, zoomedLayout]);
 
   // Redraw board whenever state changes
   useEffect(() => {
@@ -98,8 +189,8 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
       selectedShip,
       hoveredTile,
       validMoves,
-    }, layout);
-  }, [gameState, selectedShip, hoveredTile, validMoves, layout]);
+    }, zoomedLayout);
+  }, [gameState, selectedShip, hoveredTile, validMoves, zoomedLayout]);
 
   // Update valid moves when ship selected
   useEffect(() => {
@@ -125,7 +216,7 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
     const scaleY = canvas.height / rect.height;
     const x = (e.clientX - rect.left) * scaleX;
     const y = (e.clientY - rect.top) * scaleY;
-    const { col, row } = canvasToGrid(x, y, layout);
+    const { col, row } = canvasToGrid(x, y, zoomedLayout);
 
     if (col < 0 || col >= gameState.totalCols || row < 0 || row >= gameState.totalRows) return;
 
@@ -219,7 +310,7 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
         });
       }
     }
-  }, [gameState, selectedShip, validMoves, isMyTurn, turnPhase, phase, myId, emit, layout]);
+  }, [gameState, selectedShip, validMoves, isMyTurn, turnPhase, phase, myId, emit, zoomedLayout]);
 
   const handleCanvasMouseMove = useCallback((e) => {
     const canvas = canvasRef.current;
@@ -229,9 +320,9 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
     const scaleY = canvas.height / rect.height;
     const x = (e.clientX - rect.left) * scaleX;
     const y = (e.clientY - rect.top) * scaleY;
-    const { col, row } = canvasToGrid(x, y, layout);
+    const { col, row } = canvasToGrid(x, y, zoomedLayout);
     setHoveredTile({ col, row });
-  }, [gameState, layout]);
+  }, [gameState, zoomedLayout]);
 
   // Turn actions
   async function handleDrawResources() {
@@ -609,7 +700,8 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
       {/* ═══ Main Layout ═══ */}
       <div className="flex-1 flex overflow-hidden">
         {/* Board area */}
-        <div className="flex-1 overflow-auto flex items-center justify-center p-2">
+        <div className="flex-1 relative">
+        <div ref={boardContainerRef} className="absolute inset-0 overflow-auto flex items-center justify-center p-2">
           {phase === 'starting_island_pick' && (
             <div className="absolute top-20 left-1/2 -translate-x-1/2 z-40
                             bg-pirate-brown/90 border border-pirate-gold px-4 py-2 rounded text-center">
@@ -621,13 +713,13 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
               </p>
             </div>
           )}
-          <div className="relative inline-block" style={{ maxWidth: '100%', maxHeight: '100%' }}>
+          <div className="relative inline-block" style={zoomLevel <= 1 ? { maxWidth: '100%', maxHeight: '100%' } : {}}>
             <canvas
               ref={canvasRef}
               width={canvasW}
               height={canvasH}
               className="game-board-canvas"
-              style={{ maxWidth: '100%', maxHeight: '100%' }}
+              style={zoomLevel <= 1 ? { maxWidth: '100%', maxHeight: '100%' } : {}}
               onClick={handleCanvasClick}
               onMouseMove={handleCanvasMouseMove}
             />
@@ -637,8 +729,8 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
                 {animations.map(anim => {
                   const hasPos = anim.col != null && anim.row != null;
                   if (hasPos) {
-                    const xPct = ((layout.gridPad + anim.col * layout.tileSize + layout.tileSize / 2) / canvasW) * 100;
-                    const yPct = ((layout.gridPad + anim.row * layout.tileSize) / canvasH) * 100;
+                    const xPct = ((zoomedLayout.gridPad + anim.col * zoomedLayout.tileSize + zoomedLayout.tileSize / 2) / canvasW) * 100;
+                    const yPct = ((zoomedLayout.gridPad + anim.row * zoomedLayout.tileSize) / canvasH) * 100;
                     return (
                       <div key={anim.id} className="absolute anim-board-popup-at"
                         style={{ left: `${xPct}%`, top: `${yPct}%`, animationDuration: `${anim.duration}ms` }}>
@@ -663,6 +755,18 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
               </div>
             )}
           </div>
+        </div>
+        {/* Zoom indicator — positioned in outer wrapper so it doesn't scroll */}
+        {zoomLevel !== 1.0 && (
+          <div className="absolute bottom-3 left-3 z-10 flex items-center gap-1.5
+                          bg-pirate-dark/80 border border-pirate-tan/20 rounded px-2 py-1
+                          text-pirate-tan/70 text-xs select-none cursor-pointer
+                          hover:border-pirate-tan/40 hover:text-pirate-tan transition"
+               onClick={() => setZoomLevel(1.0)}
+               title="Click to reset zoom">
+            🔍 {Math.round(zoomLevel * 100)}%
+          </div>
+        )}
         </div>
 
         {/* Right panel */}
