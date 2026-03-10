@@ -1054,27 +1054,129 @@ function drawSkullBadge(ctx, x, y, skulls, ts) {
 }
 
 function drawSkullIcon(ctx, cx, cy, size) {
-  // Skull dome
+  const s = size; // shorthand
+  const outlineW = Math.max(1, s * 0.04);
+
+  // ── Crossbones (behind skull) ──
+  const boneLen = s * 0.42;
+  const boneW = s * 0.07;
+  const boneKnob = s * 0.055;
+  const boneY = cy + s * 0.22;
+
+  ctx.save();
+  ctx.strokeStyle = '#1a0f0a';
+  ctx.fillStyle = '#d8d0c0';
+  ctx.lineWidth = outlineW;
+  ctx.lineJoin = 'round';
+
+  for (const angle of [-35, 35]) {
+    ctx.save();
+    ctx.translate(cx, boneY);
+    ctx.rotate(angle * Math.PI / 180);
+    // Bone shaft
+    ctx.beginPath();
+    ctx.moveTo(-boneLen, 0);
+    ctx.lineTo(boneLen, 0);
+    ctx.lineWidth = boneW;
+    ctx.strokeStyle = '#d8d0c0';
+    ctx.stroke();
+    // Outline the shaft
+    ctx.strokeStyle = '#1a0f0a';
+    ctx.lineWidth = outlineW;
+    ctx.beginPath();
+    ctx.moveTo(-boneLen, -boneW / 2);
+    ctx.lineTo(boneLen, -boneW / 2);
+    ctx.moveTo(-boneLen, boneW / 2);
+    ctx.lineTo(boneLen, boneW / 2);
+    ctx.stroke();
+    // Knobs at each end
+    for (const dir of [-1, 1]) {
+      const kx = dir * boneLen;
+      ctx.fillStyle = '#d8d0c0';
+      ctx.beginPath();
+      ctx.arc(kx - dir * boneKnob * 0.2, -boneKnob * 0.6, boneKnob, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#1a0f0a';
+      ctx.lineWidth = outlineW;
+      ctx.stroke();
+      ctx.fillStyle = '#d8d0c0';
+      ctx.beginPath();
+      ctx.arc(kx - dir * boneKnob * 0.2, boneKnob * 0.6, boneKnob, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // ── Skull ──
+  ctx.lineWidth = outlineW;
+  ctx.strokeStyle = '#1a0f0a';
+
+  // Cranium (large dome)
+  const crTop = cy - s * 0.28;
+  const crW = s * 0.32;
+  const crH = s * 0.30;
+
   ctx.fillStyle = '#d8d0c0';
   ctx.beginPath();
-  ctx.arc(cx, cy - size * 0.08, size * 0.32, Math.PI, 0);
-  ctx.lineTo(cx + size * 0.22, cy + size * 0.15);
-  ctx.quadraticCurveTo(cx, cy + size * 0.28, cx - size * 0.22, cy + size * 0.15);
+  ctx.ellipse(cx, crTop + crH * 0.4, crW, crH, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // Jaw / lower face (narrower, overlaps bottom of cranium)
+  const jawY = cy + s * 0.02;
+  const jawW = s * 0.24;
+  const jawH = s * 0.14;
+  ctx.fillStyle = '#d8d0c0';
+  ctx.beginPath();
+  ctx.moveTo(cx - jawW, jawY - jawH * 0.3);
+  ctx.quadraticCurveTo(cx - jawW * 0.9, jawY + jawH, cx, jawY + jawH * 1.1);
+  ctx.quadraticCurveTo(cx + jawW * 0.9, jawY + jawH, cx + jawW, jawY - jawH * 0.3);
   ctx.closePath();
   ctx.fill();
-  // Eye sockets
+  ctx.stroke();
+
+  // Eye sockets (angular/tapered)
   ctx.fillStyle = '#1a0f0a';
+  for (const dir of [-1, 1]) {
+    const ex = cx + dir * s * 0.13;
+    const ey = cy - s * 0.06;
+    const ew = s * 0.11;
+    const eh = s * 0.09;
+    ctx.beginPath();
+    ctx.moveTo(ex, ey - eh);            // top
+    ctx.lineTo(ex + ew, ey);            // right
+    ctx.lineTo(ex + ew * 0.3, ey + eh * 0.7); // bottom-right
+    ctx.lineTo(ex - ew * 0.3, ey + eh * 0.7); // bottom-left
+    ctx.lineTo(ex - ew, ey);            // left
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Nose hole (inverted triangle)
   ctx.beginPath();
-  ctx.arc(cx - size * 0.1, cy - size * 0.02, size * 0.07, 0, Math.PI * 2);
-  ctx.arc(cx + size * 0.1, cy - size * 0.02, size * 0.07, 0, Math.PI * 2);
-  ctx.fill();
-  // Nose
-  ctx.beginPath();
-  ctx.moveTo(cx, cy + size * 0.05);
-  ctx.lineTo(cx - size * 0.04, cy + size * 0.12);
-  ctx.lineTo(cx + size * 0.04, cy + size * 0.12);
+  ctx.moveTo(cx, cy + s * 0.02);
+  ctx.lineTo(cx - s * 0.05, cy + s * 0.1);
+  ctx.lineTo(cx + s * 0.05, cy + s * 0.1);
   ctx.closePath();
   ctx.fill();
+
+  // Teeth (vertical lines across jaw)
+  ctx.strokeStyle = '#1a0f0a';
+  ctx.lineWidth = Math.max(0.8, s * 0.025);
+  const teethY = cy + s * 0.1;
+  const teethH = s * 0.08;
+  const teethCount = 5;
+  const teethSpan = s * 0.22;
+  for (let i = 0; i < teethCount; i++) {
+    const tx = cx - teethSpan / 2 + (i + 0.5) * (teethSpan / teethCount);
+    ctx.beginPath();
+    ctx.moveTo(tx, teethY);
+    ctx.lineTo(tx, teethY + teethH);
+    ctx.stroke();
+  }
+
+  ctx.restore();
 }
 
 function drawOwnerFlag(ctx, x, y, color, ts) {
