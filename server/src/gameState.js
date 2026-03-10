@@ -187,6 +187,23 @@ function hasLandBarrierBetween(state, posA, posB) {
   return tileA.type === TILE_TYPES.LAND_BARRIER || tileB.type === TILE_TYPES.LAND_BARRIER;
 }
 
+// Port approach restriction: ships can only ENTER a port from its open sides
+function isPortEntryBlocked(state, fromPos, toPos) {
+  const tile = state.board[toPos.row]?.[toPos.col];
+  if (!tile || tile.type !== TILE_TYPES.PORT || !tile.openSides) return false;
+
+  // Determine which direction the ship is approaching from
+  const dc = toPos.col - fromPos.col;
+  const dr = toPos.row - fromPos.row;
+  let approachDir;
+  if (dr === -1) approachDir = 'S'; // ship was below, approaching from south
+  if (dr === 1) approachDir = 'N';  // ship was above, approaching from north
+  if (dc === -1) approachDir = 'E'; // ship was right, approaching from east
+  if (dc === 1) approachDir = 'W';  // ship was left, approaching from west
+
+  return !tile.openSides.includes(approachDir);
+}
+
 // Rulebook: cannot interact across the storm border (one inside, one outside)
 function isAcrossStormBorder(state, posA, posB) {
   if (!state.storm) return false;
@@ -554,6 +571,11 @@ export function moveShip(state, playerId, shipId, path) {
     // Check for wall barriers between current position and next step
     if (hasWallBetween(state, current, step)) {
       return { error: 'Path blocked by wall' };
+    }
+
+    // Check port approach direction restriction (entry only — exit is unrestricted)
+    if (isPortEntryBlocked(state, current, step)) {
+      return { error: 'Cannot enter port from this direction' };
     }
 
     const occupied = isOccupied(state, step, shipId);

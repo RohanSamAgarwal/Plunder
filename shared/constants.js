@@ -43,6 +43,8 @@ export const WIN_POINTS = 10;
 
 export const STORM_SIZE = 3; // 3x3 grid
 
+export const PORT_SHAPES = { U: 'U', L: 'L', OPEN: 'open' };
+
 export const INITIAL_LIFE_PEGS = 3;
 export const MAX_CANNONS = 2;   // max cannons per ship (rulebook: 2)
 export const MAX_MASTS = 2;     // max masts per ship (rulebook: 2)

@@ -82,7 +82,7 @@ function computeDepthMap(board, totalCols, totalRows) {
   for (let r = 0; r < totalRows; r++) {
     for (let c = 0; c < totalCols; c++) {
       const t = board[r][c].type;
-      if (t === 'island' || t === 'merchant' || t === 'normal_island') {
+      if (t === 'island' || t === 'merchant' || t === 'normal_island' || t === 'port') {
         depth[r][c] = 0;
         queue.push([c, r]);
       }
@@ -392,6 +392,10 @@ function computeBoardKey(board, totalCols, totalRows, walls) {
       const t = board[r][c];
       const typeVal = t.type.charCodeAt(0) + (t.type.charCodeAt(1) || 0);
       hash = ((hash << 5) - hash + typeVal + c * 31 + r * 37) | 0;
+      // Include port shape in hash for cache invalidation
+      if (t.portShape) {
+        hash = ((hash << 5) - hash + t.portShape.charCodeAt(0) + c * 41 + r * 43) | 0;
+      }
     }
   }
   // Include walls in hash
@@ -478,12 +482,12 @@ function drawStaticLayer(ctx, canvas, gameState, layout) {
     ctx.fillText(String.fromCharCode(65 + r), boardW + gp + gp / 2, y);
   }
 
-  // Pre-compute island neighbor set for shore blending
+  // Pre-compute island neighbor set for shore blending (includes port tiles)
   const islandSet = new Set();
   for (let r = 0; r < totalRows; r++) {
     for (let c = 0; c < totalCols; c++) {
       const t = board[r][c];
-      if (t.type === 'island' || t.type === 'merchant' || t.type === 'normal_island') {
+      if (t.type === 'island' || t.type === 'merchant' || t.type === 'normal_island' || t.type === 'port') {
         islandSet.add(`${c},${r}`);
       }
     }
@@ -492,12 +496,17 @@ function drawStaticLayer(ctx, canvas, gameState, layout) {
   // Compute depth map for water color gradients
   const depthMap = computeDepthMap(board, totalCols, totalRows);
 
-  // Compute organic island outlines
+  // Compute organic island outlines (include port tile in each island's outline)
   _islandOutlines = new Map();
   for (const [id, island] of Object.entries(islands)) {
     if (island.type === 'obstacle') continue;
     if (!island.tiles || island.tiles.length === 0) continue;
-    const outline = computeIslandOutline(island.tiles, ts, id, gp);
+    // Expand tile set to include port tile so the outline encompasses the harbor
+    const expandedTiles = [...island.tiles];
+    if (island.port) {
+      expandedTiles.push({ col: island.port.col, row: island.port.row });
+    }
+    const outline = computeIslandOutline(expandedTiles, ts, id, gp);
     if (outline) _islandOutlines.set(id, outline);
   }
 
@@ -518,7 +527,8 @@ function drawStaticLayer(ctx, canvas, gameState, layout) {
           drawSeaTile(ctx, x, y, c, r, ts, islandSet, depthMap);
           break;
         case 'port':
-          drawPortTile(ctx, x, y, c, r, ts, tile, islands, players);
+          // Draw sea underneath — organic island shape + harbor cove drawn later
+          drawSeaTile(ctx, x, y, c, r, ts, islandSet, depthMap);
           break;
         case 'normal_island':
           drawRockTile(ctx, x, y, c, r, ts, islandSet, tile);
@@ -530,8 +540,8 @@ function drawStaticLayer(ctx, canvas, gameState, layout) {
           drawSeaTile(ctx, x, y, c, r, ts, islandSet, depthMap);
       }
 
-      // Subtle grid lines — only on water/port, very faint dashed
-      if (tile.type === 'sea' || tile.type === 'port') {
+      // Subtle grid lines — only on water, very faint dashed
+      if (tile.type === 'sea') {
         ctx.strokeStyle = 'rgba(100, 150, 180, 0.04)';
         ctx.lineWidth = 0.3;
         ctx.setLineDash([ts * 0.12, ts * 0.18]);
@@ -546,6 +556,14 @@ function drawStaticLayer(ctx, canvas, gameState, layout) {
     if (island.type === 'obstacle') continue;
     const outline = _islandOutlines.get(id);
     if (outline) drawOrganicIsland(ctx, island, outline, ts, gp, islandSet);
+  }
+
+  // Carve harbor coves into port tiles (after organic islands are drawn)
+  for (const [id, island] of Object.entries(islands)) {
+    if (island.type === 'obstacle') continue;
+    if (island.port && island.port.openSides) {
+      drawHarborCove(ctx, island, ts, gp, board);
+    }
   }
 
   // Wall barriers between tiles
@@ -821,105 +839,178 @@ function drawBarrelIcon(ctx, cx, cy, size) {
   ctx.stroke();
 }
 
-function drawPortTile(ctx, x, y, col, row, ts, tile, islands, players) {
-  // Deep port water
+// ── Harbor Cove Rendering ─────────────────────────────────────
+
+function drawHarborCove(ctx, island, ts, gp, board) {
+  const port = island.port;
+  if (!port || !port.openSides) return;
+
+  const px = gp + port.col * ts;
+  const py = gp + port.row * ts;
+  const openSides = port.openSides;
+  const inset = ts * 0.18; // land border thickness on blocked sides
+  const cornerR = ts * 0.12;
+
+  // Determine harbor water bounds — start inset, extend to tile edge on open sides
+  let left = px + inset;
+  let right = px + ts - inset;
+  let top = py + inset;
+  let bottom = py + ts - inset;
+
+  if (openSides.includes('N')) top = py - ts * 0.02;
+  if (openSides.includes('S')) bottom = py + ts + ts * 0.02;
+  if (openSides.includes('W')) left = px - ts * 0.02;
+  if (openSides.includes('E')) right = px + ts + ts * 0.02;
+
+  ctx.save();
+
+  // Harbor water fill with rounded corners
+  const harborPath = new Path2D();
+  roundRectPath(harborPath, left, top, right - left, bottom - top, cornerR);
   ctx.fillStyle = COLORS.portWater;
-  ctx.fillRect(x, y, ts, ts);
+  ctx.fill(harborPath);
 
-  // Subtle ripples
-  ctx.strokeStyle = 'rgba(60,140,180,0.06)';
+  // Subtle water ripples inside harbor
+  ctx.strokeStyle = 'rgba(60,140,180,0.08)';
   ctx.lineWidth = 0.8;
+  const rippleDir = (right - left) > (bottom - top); // horizontal if wider
   for (let i = 0; i < 3; i++) {
-    const ry = y + ts * 0.2 + i * ts * 0.25;
     ctx.beginPath();
-    ctx.moveTo(x, ry);
-    ctx.quadraticCurveTo(x + ts * 0.5, ry - ts * 0.02, x + ts, ry);
+    if (rippleDir) {
+      const ry = top + (bottom - top) * (0.2 + i * 0.25);
+      ctx.moveTo(left + 3, ry);
+      ctx.quadraticCurveTo((left + right) / 2, ry - ts * 0.015, right - 3, ry);
+    } else {
+      const rx = left + (right - left) * (0.2 + i * 0.25);
+      ctx.moveTo(rx, top + 3);
+      ctx.quadraticCurveTo(rx - ts * 0.015, (top + bottom) / 2, rx, bottom - 3);
+    }
     ctx.stroke();
   }
 
-  // Multi-plank dock
-  const plankW = Math.round(ts * 0.45);
-  const plankH = Math.max(3, Math.round(ts * 0.055));
-  const dockX = x + ts / 2 - plankW / 2;
-  const dockBaseY = y + ts - plankH * 6;
-
-  for (let p = 0; p < 4; p++) {
-    const py = dockBaseY + p * (plankH + 1);
-    const pw = plankW - (p % 2) * ts * 0.05;
-    const pColor = p % 2 === 0 ? COLORS.portDock : COLORS.plankDark;
-    ctx.fillStyle = pColor;
-    ctx.fillRect(dockX + (plankW - pw) / 2, py, pw, plankH);
-    // Wood grain
-    ctx.strokeStyle = 'rgba(90,70,40,0.25)';
-    ctx.lineWidth = 0.5;
-    ctx.beginPath();
-    ctx.moveTo(dockX + (plankW - pw) / 2 + 2, py + plankH / 2);
-    ctx.lineTo(dockX + (plankW - pw) / 2 + pw - 2, py + plankH / 2);
-    ctx.stroke();
+  // Beach/foam edges where harbor water meets island land (blocked sides)
+  ctx.lineWidth = Math.max(1, ts * 0.03);
+  if (!openSides.includes('N') && top > py) {
+    ctx.strokeStyle = 'rgba(220, 200, 160, 0.5)';
+    ctx.beginPath(); ctx.moveTo(left + cornerR, top); ctx.lineTo(right - cornerR, top); ctx.stroke();
+  }
+  if (!openSides.includes('S') && bottom < py + ts) {
+    ctx.strokeStyle = 'rgba(220, 200, 160, 0.5)';
+    ctx.beginPath(); ctx.moveTo(left + cornerR, bottom); ctx.lineTo(right - cornerR, bottom); ctx.stroke();
+  }
+  if (!openSides.includes('W') && left > px) {
+    ctx.strokeStyle = 'rgba(220, 200, 160, 0.5)';
+    ctx.beginPath(); ctx.moveTo(left, top + cornerR); ctx.lineTo(left, bottom - cornerR); ctx.stroke();
+  }
+  if (!openSides.includes('E') && right < px + ts) {
+    ctx.strokeStyle = 'rgba(220, 200, 160, 0.5)';
+    ctx.beginPath(); ctx.moveTo(right, top + cornerR); ctx.lineTo(right, bottom - cornerR); ctx.stroke();
   }
 
-  // Mooring posts
-  const postW = Math.max(2, ts * 0.04);
-  const postH = Math.max(4, ts * 0.08);
-  ctx.fillStyle = COLORS.portDockLight;
-  ctx.fillRect(dockX - postW, dockBaseY - postH * 0.5, postW, postH + plankH * 2);
-  ctx.fillRect(dockX + plankW, dockBaseY - postH * 0.5, postW, postH + plankH * 2);
-  // Post tops
-  ctx.fillStyle = '#c0a870';
-  ctx.fillRect(dockX - postW - 1, dockBaseY - postH * 0.5 - 1, postW + 2, 2);
-  ctx.fillRect(dockX + plankW - 1, dockBaseY - postH * 0.5 - 1, postW + 2, 2);
+  // Draw dock/pier inside the harbor (on the island-facing side)
+  drawHarborDock(ctx, left, top, right, bottom, openSides, ts);
 
-  // Rope coil near one post
-  ctx.strokeStyle = COLORS.ropeColor;
-  ctx.lineWidth = Math.max(0.8, ts * 0.012);
-  const ropeX = dockX - postW - ts * 0.04;
-  const ropeY = dockBaseY + plankH;
-  ctx.beginPath();
-  ctx.arc(ropeX, ropeY, ts * 0.025, 0, Math.PI * 1.5);
-  ctx.stroke();
+  // Draw anchor icon in the harbor water
+  const anchorCX = (left + right) / 2;
+  const anchorCY = (top + bottom) / 2;
+  drawHarborAnchor(ctx, anchorCX, anchorCY, Math.min(right - left, bottom - top) * 0.45);
 
-  // Lantern glow
-  ctx.fillStyle = COLORS.lanternGlow;
-  const lanternGrad = ctx.createRadialGradient(dockX + plankW + postW / 2, dockBaseY - postH * 0.3, 0,
-    dockX + plankW + postW / 2, dockBaseY - postH * 0.3, ts * 0.1);
-  lanternGrad.addColorStop(0, 'rgba(255,200,80,0.3)');
-  lanternGrad.addColorStop(1, 'transparent');
-  ctx.fillStyle = lanternGrad;
-  ctx.fillRect(dockX + plankW - ts * 0.05, dockBaseY - postH - ts * 0.05, ts * 0.15, ts * 0.15);
-
-  // Anchor icon
-  drawAnchorIcon(ctx, x + ts / 2, y + ts * 0.32, ts * 0.38);
+  ctx.restore();
 }
 
-function drawAnchorIcon(ctx, cx, cy, size) {
-  ctx.strokeStyle = '#9ab0c0';
-  ctx.lineWidth = Math.max(1.5, size * 0.06);
+function drawHarborDock(ctx, left, top, right, bottom, openSides, ts) {
+  const hW = right - left;
+  const hH = bottom - top;
+
+  // Find a blocked (island-facing) side to place the dock against
+  let dockX, dockY, dockW, dockH;
+  const plankColor1 = COLORS.portDock;
+  const plankColor2 = COLORS.plankDark;
+
+  if (!openSides.includes('N') && top > 0) {
+    // Dock on north side (top), extending downward
+    dockW = Math.min(hW * 0.5, ts * 0.35);
+    dockH = Math.min(hH * 0.22, ts * 0.14);
+    dockX = left + (hW - dockW) / 2;
+    dockY = top;
+  } else if (!openSides.includes('S')) {
+    dockW = Math.min(hW * 0.5, ts * 0.35);
+    dockH = Math.min(hH * 0.22, ts * 0.14);
+    dockX = left + (hW - dockW) / 2;
+    dockY = bottom - dockH;
+  } else if (!openSides.includes('W')) {
+    dockW = Math.min(hW * 0.22, ts * 0.14);
+    dockH = Math.min(hH * 0.5, ts * 0.35);
+    dockX = left;
+    dockY = top + (hH - dockH) / 2;
+  } else if (!openSides.includes('E')) {
+    dockW = Math.min(hW * 0.22, ts * 0.14);
+    dockH = Math.min(hH * 0.5, ts * 0.35);
+    dockX = right - dockW;
+    dockY = top + (hH - dockH) / 2;
+  } else {
+    // All sides open — small dock in center
+    dockW = ts * 0.18;
+    dockH = ts * 0.18;
+    dockX = left + (hW - dockW) / 2;
+    dockY = top + (hH - dockH) / 2;
+  }
+
+  // Draw planks
+  ctx.fillStyle = plankColor1;
+  ctx.fillRect(dockX, dockY, dockW, dockH);
+
+  // Plank grain lines
+  ctx.strokeStyle = 'rgba(90,70,40,0.3)';
+  ctx.lineWidth = 0.5;
+  const isHoriz = dockW > dockH;
+  if (isHoriz) {
+    for (let i = 1; i <= 2; i++) {
+      const ly = dockY + (dockH / 3) * i;
+      ctx.beginPath(); ctx.moveTo(dockX + 1, ly); ctx.lineTo(dockX + dockW - 1, ly); ctx.stroke();
+    }
+  } else {
+    for (let i = 1; i <= 2; i++) {
+      const lx = dockX + (dockW / 3) * i;
+      ctx.beginPath(); ctx.moveTo(lx, dockY + 1); ctx.lineTo(lx, dockY + dockH - 1); ctx.stroke();
+    }
+  }
+
+  // Mooring posts at dock ends
+  const postSz = Math.max(2, ts * 0.03);
+  ctx.fillStyle = COLORS.portDockLight;
+  if (isHoriz) {
+    ctx.fillRect(dockX - postSz / 2, dockY + dockH / 2 - postSz / 2, postSz, postSz);
+    ctx.fillRect(dockX + dockW - postSz / 2, dockY + dockH / 2 - postSz / 2, postSz, postSz);
+  } else {
+    ctx.fillRect(dockX + dockW / 2 - postSz / 2, dockY - postSz / 2, postSz, postSz);
+    ctx.fillRect(dockX + dockW / 2 - postSz / 2, dockY + dockH - postSz / 2, postSz, postSz);
+  }
+}
+
+function drawHarborAnchor(ctx, cx, cy, size) {
+  if (size < 6) return; // too small to render
+  ctx.strokeStyle = 'rgba(154, 176, 192, 0.5)';
+  ctx.lineWidth = Math.max(1, size * 0.07);
   ctx.lineCap = 'round';
-  // Ring at top
+  const s = size * 0.5;
+  // Ring
   ctx.beginPath();
-  ctx.arc(cx, cy - size * 0.32, size * 0.08, 0, Math.PI * 2);
+  ctx.arc(cx, cy - s * 0.32, s * 0.08, 0, Math.PI * 2);
   ctx.stroke();
-  // Vertical shaft
+  // Shaft
   ctx.beginPath();
-  ctx.moveTo(cx, cy - size * 0.24);
-  ctx.lineTo(cx, cy + size * 0.25);
+  ctx.moveTo(cx, cy - s * 0.24);
+  ctx.lineTo(cx, cy + s * 0.25);
   ctx.stroke();
   // Crossbar
   ctx.beginPath();
-  ctx.moveTo(cx - size * 0.2, cy - size * 0.1);
-  ctx.lineTo(cx + size * 0.2, cy - size * 0.1);
+  ctx.moveTo(cx - s * 0.2, cy - s * 0.1);
+  ctx.lineTo(cx + s * 0.2, cy - s * 0.1);
   ctx.stroke();
-  // Bottom curve (fluke)
+  // Fluke
   ctx.beginPath();
-  ctx.arc(cx, cy + size * 0.1, size * 0.2, 0, Math.PI);
-  ctx.stroke();
-  // Fluke tips
-  const flukeR = size * 0.2;
-  ctx.beginPath();
-  ctx.moveTo(cx - flukeR, cy + size * 0.1);
-  ctx.lineTo(cx - flukeR - size * 0.06, cy + size * 0.04);
-  ctx.moveTo(cx + flukeR, cy + size * 0.1);
-  ctx.lineTo(cx + flukeR + size * 0.06, cy + size * 0.04);
+  ctx.arc(cx, cy + s * 0.1, s * 0.2, 0, Math.PI);
   ctx.stroke();
   ctx.lineCap = 'butt';
 }
@@ -1662,6 +1753,15 @@ export function getValidMoves(gameState, ship, maxMoves) {
       if (occupied.has(k)) continue;
       // Check for wall between current tile and neighbor
       if (wallSet.has(canonicalWallKey(cur.col, cur.row, nc, nr))) continue;
+      // Check port approach direction restriction (entry only)
+      if (tile.type === 'port' && tile.openSides) {
+        let approachDir;
+        if (dr === -1) approachDir = 'S';
+        if (dr === 1) approachDir = 'N';
+        if (dc === -1) approachDir = 'E';
+        if (dc === 1) approachDir = 'W';
+        if (!tile.openSides.includes(approachDir)) continue;
+      }
       visited.add(k);
       queue.push({ col: nc, row: nr, cost: cur.cost + 1 });
     }

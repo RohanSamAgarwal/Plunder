@@ -10,7 +10,7 @@
 // - Merchant islands have barrel markers, cannot be owned
 // - No dead-ends: every navigable tile must have >= 2 navigable orthogonal neighbors
 
-import { TILE_TYPES } from '../../shared/constants.js';
+import { TILE_TYPES, PORT_SHAPES } from '../../shared/constants.js';
 
 const PANEL_SIZE = 6;
 
@@ -95,14 +95,18 @@ function findPortPosition(islandTiles, gridWidth, gridHeight, occupiedSet) {
       if (nc >= 0 && nc < gridWidth && nr >= 0 && nr < gridHeight &&
           !islandSet.has(key) && !occupiedSet.has(key)) {
         let openness = 0;
+        let islandNeighborCount = 0;
         for (const [dc2, dr2] of [[0,1],[0,-1],[1,0],[-1,0]]) {
           const k2 = `${nc+dc2},${nr+dr2}`;
-          if (nc+dc2 >= 0 && nc+dc2 < gridWidth && nr+dr2 >= 0 && nr+dr2 < gridHeight &&
-              !islandSet.has(k2) && !occupiedSet.has(k2)) {
-            openness++;
+          if (nc+dc2 >= 0 && nc+dc2 < gridWidth && nr+dr2 >= 0 && nr+dr2 < gridHeight) {
+            if (islandSet.has(k2)) {
+              islandNeighborCount++;
+            } else if (!occupiedSet.has(k2)) {
+              openness++;
+            }
           }
         }
-        candidates.push({ col: nc, row: nr, openness });
+        candidates.push({ col: nc, row: nr, openness, islandNeighborCount });
       }
     }
   }
@@ -111,6 +115,82 @@ function findPortPosition(islandTiles, gridWidth, gridHeight, occupiedSet) {
   candidates.sort((a, b) => b.openness - a.openness);
   const topN = Math.min(3, candidates.length);
   return candidates[Math.floor(Math.random() * topN)];
+}
+
+// ── Port Shape Assignment ─────────────────────────────────────
+
+function assignPortShape(islandNeighborCount) {
+  // Constrain based on how many island sides the port has
+  if (islandNeighborCount >= 3) return PORT_SHAPES.OPEN; // only 1 free side
+  if (islandNeighborCount >= 2) {
+    // Only 2 free sides — U would leave 0 open
+    return Math.random() < 0.5 ? PORT_SHAPES.OPEN : PORT_SHAPES.L;
+  }
+  // Standard: 1 island neighbor, 3 non-island sides — equal random
+  const roll = Math.random();
+  if (roll < 0.33) return PORT_SHAPES.U;
+  if (roll < 0.66) return PORT_SHAPES.L;
+  return PORT_SHAPES.OPEN;
+}
+
+function determinePortOpenSides(portCol, portRow, islandTiles, gridWidth, gridHeight, occupiedSet, shape) {
+  const islandSet = new Set(islandTiles.map(t => `${t.col},${t.row}`));
+  const dirs = [
+    { name: 'N', dc: 0, dr: -1 },
+    { name: 'S', dc: 0, dr: 1 },
+    { name: 'E', dc: 1, dr: 0 },
+    { name: 'W', dc: -1, dr: 0 },
+  ];
+
+  const islandSides = [];
+  const freeSides = [];
+
+  for (const d of dirs) {
+    const nc = portCol + d.dc, nr = portRow + d.dr;
+    if (islandSet.has(`${nc},${nr}`)) {
+      islandSides.push(d.name);
+    } else {
+      freeSides.push(d.name);
+    }
+  }
+
+  if (shape === PORT_SHAPES.OPEN) {
+    return freeSides; // all non-island sides open
+  }
+
+  // Compute water score for each free side (count reachable sea tiles in that direction)
+  const sideScores = freeSides.map(sideName => {
+    const d = dirs.find(dd => dd.name === sideName);
+    let score = 0;
+    for (let step = 1; step <= 3; step++) {
+      const sc = portCol + d.dc * step;
+      const sr = portRow + d.dr * step;
+      if (sc < 0 || sc >= gridWidth || sr < 0 || sr >= gridHeight) break;
+      const key = `${sc},${sr}`;
+      if (islandSet.has(key) || occupiedSet.has(key)) break;
+      score++;
+    }
+    return { name: sideName, score };
+  });
+
+  // Sort by score ascending (lowest score = most likely to be blocked)
+  sideScores.sort((a, b) => a.score - b.score);
+
+  if (shape === PORT_SHAPES.L) {
+    // Block the 1 side with lowest water score, keep rest open
+    const toBlock = 1;
+    const blocked = sideScores.slice(0, toBlock).map(s => s.name);
+    return freeSides.filter(s => !blocked.includes(s));
+  }
+
+  if (shape === PORT_SHAPES.U) {
+    // Block the 2 sides with lowest water score, keep only best open
+    const toBlock = Math.min(2, freeSides.length - 1); // always keep at least 1 open
+    const blocked = sideScores.slice(0, toBlock).map(s => s.name);
+    return freeSides.filter(s => !blocked.includes(s));
+  }
+
+  return freeSides;
 }
 
 // ── Dead-End Detection & Fixing ────────────────────────────────
@@ -306,9 +386,14 @@ function generatePanel(panelId, config) {
       if (!spec.obstacle) {
         const port = findPortPosition(tiles, PANEL_SIZE, PANEL_SIZE, occupiedSet);
         if (!port) { ok = false; break; }
-        grid[port.row][port.col] = { type: TILE_TYPES.PORT, portOf: islandId, isMerchant: !!spec.merchant, col: port.col, row: port.row };
+        const portShape = assignPortShape(port.islandNeighborCount);
+        const openSides = determinePortOpenSides(port.col, port.row, tiles, PANEL_SIZE, PANEL_SIZE, occupiedSet, portShape);
+        grid[port.row][port.col] = {
+          type: TILE_TYPES.PORT, portOf: islandId, isMerchant: !!spec.merchant,
+          col: port.col, row: port.row, portShape, openSides,
+        };
         occupiedSet.add(`${port.col},${port.row}`);
-        island.port = { col: port.col, row: port.row };
+        island.port = { col: port.col, row: port.row, portShape, openSides };
       }
 
       islands.push(island);
@@ -337,13 +422,15 @@ function generateFallbackPanel(panelId) {
   const id = `${panelId}_island_0`;
   grid[2][2] = { type: TILE_TYPES.ISLAND, islandId: id, skulls: 1, col: 2, row: 2 };
   grid[2][3] = { type: TILE_TYPES.ISLAND, islandId: id, skulls: 1, col: 3, row: 2 };
-  grid[3][2] = { type: TILE_TYPES.PORT, portOf: id, col: 2, row: 3 };
+  // Port below island — island is to the N, so open sides are S, E, W
+  const fbOpenSides = ['S', 'E', 'W'];
+  grid[3][2] = { type: TILE_TYPES.PORT, portOf: id, col: 2, row: 3, portShape: PORT_SHAPES.OPEN, openSides: fbOpenSides };
 
   return {
     grid,
     islands: [{
       id, tiles: [{ col: 2, row: 2 }, { col: 3, row: 2 }],
-      skulls: 1, type: 'resource', port: { col: 2, row: 3 },
+      skulls: 1, type: 'resource', port: { col: 2, row: 3, portShape: PORT_SHAPES.OPEN, openSides: fbOpenSides },
     }],
   };
 }
@@ -695,7 +782,10 @@ export function generateBoard(playerCount = 4) {
       for (let c = 0; c < totalCols; c++) {
         const tile = board[r][c];
         if (tile.type === TILE_TYPES.PORT && tile.portOf && islandsMap[tile.portOf]) {
-          islandsMap[tile.portOf].port = { col: c, row: r };
+          islandsMap[tile.portOf].port = {
+            col: c, row: r,
+            portShape: tile.portShape, openSides: tile.openSides,
+          };
         }
       }
     }
@@ -720,7 +810,10 @@ export function generateBoard(playerCount = 4) {
           islandsMap[tile.islandId].tiles.push({ col: c, row: r });
         }
         if (tile.type === TILE_TYPES.PORT && tile.portOf && islandsMap[tile.portOf]) {
-          islandsMap[tile.portOf].port = { col: c, row: r };
+          islandsMap[tile.portOf].port = {
+            col: c, row: r,
+            portShape: tile.portShape, openSides: tile.openSides,
+          };
         }
       }
     }
@@ -821,10 +914,12 @@ function generateSimpleFallback(totalCols, totalRows) {
     const type = s.m ? TILE_TYPES.MERCHANT : TILE_TYPES.ISLAND;
     board[s.r][s.c] = { type, islandId: id, skulls: s.sk, col: s.c, row: s.r };
     board[s.r][s.c+1] = { type, islandId: id, skulls: s.sk, col: s.c+1, row: s.r };
-    board[s.r+1][s.c] = { type: TILE_TYPES.PORT, portOf: id, col: s.c, row: s.r+1 };
+    // Port below island — island is N, open sides are S, E, W
+    const fbOS = ['S', 'E', 'W'];
+    board[s.r+1][s.c] = { type: TILE_TYPES.PORT, portOf: id, col: s.c, row: s.r+1, portShape: PORT_SHAPES.OPEN, openSides: fbOS };
     islands[id] = {
       id, tiles: [{ col: s.c, row: s.r }, { col: s.c+1, row: s.r }],
-      port: { col: s.c, row: s.r+1 }, skulls: s.sk,
+      port: { col: s.c, row: s.r+1, portShape: PORT_SHAPES.OPEN, openSides: fbOS }, skulls: s.sk,
       type: s.m ? 'merchant' : 'resource', owner: null,
     };
   }
