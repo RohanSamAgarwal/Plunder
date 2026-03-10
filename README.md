@@ -120,6 +120,8 @@ plunder/
 - ✅ Shore rings and beach edges around islands
 - ✅ Subtle dashed grid lines on water only
 - ✅ Board zoom in/out (mouse wheel) with right-click drag panning
+- ✅ Island-integrated harbor ports (U/L/open shapes) with approach restrictions
+- ✅ Cartoonish skull icons on islands (no black background)
 
 ### To Do
 - 🔲 Ships need clearer visuals for masts/cannons/lives
