@@ -551,17 +551,32 @@ function drawStaticLayer(ctx, canvas, gameState, layout) {
   // Wall barriers between tiles
   drawWalls(ctx, gameState, ts, gp);
 
-  // Island decorations — positioned at island center
+  // Island decorations — positioned at tile closest to island center
   for (const [id, island] of Object.entries(islands)) {
     if (island.type === 'obstacle' || !island.skulls) continue;
     const outline = _islandOutlines.get(id);
     if (!outline) continue;
+    if (!island.tiles || island.tiles.length === 0) continue;
 
     const { centerX, centerY } = outline;
-    drawSkullBadge(ctx, centerX - ts / 2, centerY - ts * 0.35, island.skulls, ts);
+
+    // Find the actual island tile closest to the computed center
+    let bestTile = island.tiles[0];
+    let bestDist = Infinity;
+    for (const t of island.tiles) {
+      const tx = gp + t.col * ts + ts / 2;
+      const ty = gp + t.row * ts + ts / 2;
+      const d = (tx - centerX) ** 2 + (ty - centerY) ** 2;
+      if (d < bestDist) { bestDist = d; bestTile = t; }
+    }
+    // Center of the closest tile
+    const tileCX = gp + bestTile.col * ts + ts / 2;
+    const tileCY = gp + bestTile.row * ts + ts / 2;
+
+    drawSkullBadge(ctx, tileCX, tileCY, island.skulls, ts);
 
     if (island.owner && players[island.owner]) {
-      drawOwnerFlag(ctx, centerX + ts * 0.35, centerY - ts * 0.35, SHIP_COLORS[players[island.owner].color], ts);
+      drawOwnerFlag(ctx, tileCX + ts * 0.35, tileCY - ts * 0.35, SHIP_COLORS[players[island.owner].color], ts);
     }
   }
 
@@ -1029,16 +1044,19 @@ function drawLandBarrier(ctx, x, y, ts) {
 
 // ── Decorations ────────────────────────────────────────────────
 
-function drawSkullBadge(ctx, x, y, skulls, ts) {
-  const skullSize = Math.round(ts * 0.34);
-  const spacing = Math.round(ts * 0.36);
-  const totalW = skulls * spacing;
-  const startX = x + ts / 2 - totalW / 2 + spacing / 2;
-  const sy = y + Math.round(ts * 0.18);
+function drawSkullBadge(ctx, tileCX, tileCY, skulls, ts) {
+  // All skulls must fit within one tile, centered horizontally and vertically
+  // Scale skull size based on count so they always fit within ts width
+  const maxWidth = ts * 0.85; // usable width within one tile
+  const skullSize = Math.round(Math.min(ts * 0.34, maxWidth / skulls * 0.85));
+  const spacing = Math.round(Math.min(ts * 0.36, maxWidth / skulls));
+  const totalW = (skulls - 1) * spacing; // distance from first to last skull center
 
-  // No background — skulls drawn directly on island
+  // Center the row of skulls at the tile center
+  const startX = tileCX - totalW / 2;
+
   for (let i = 0; i < skulls; i++) {
-    drawSkullIcon(ctx, startX + i * spacing, sy, skullSize);
+    drawSkullIcon(ctx, startX + i * spacing, tileCY, skullSize);
   }
 }
 
