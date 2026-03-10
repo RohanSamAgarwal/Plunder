@@ -177,10 +177,20 @@ function determinePortOpenSides(portCol, portRow, islandTiles, gridWidth, gridHe
   sideScores.sort((a, b) => a.score - b.score);
 
   if (shape === PORT_SHAPES.L) {
-    // Block the 1 side with lowest water score, keep rest open
-    const toBlock = 1;
-    const blocked = sideScores.slice(0, toBlock).map(s => s.name);
-    return freeSides.filter(s => !blocked.includes(s));
+    // Block 1 side with lowest water score, keep rest open
+    // BUT ensure the 2 remaining open sides are ADJACENT (not opposite = no channel)
+    const oppositePairs = [['N','S'], ['E','W']];
+    const isOpposite = (a, b) => oppositePairs.some(([x, y]) => (a === x && b === y) || (a === y && b === x));
+
+    // Try blocking lowest-score side first
+    for (let i = 0; i < sideScores.length; i++) {
+      const candidate = freeSides.filter(s => s !== sideScores[i].name);
+      if (candidate.length === 2 && !isOpposite(candidate[0], candidate[1])) {
+        return candidate;
+      }
+    }
+    // Fallback: if all options create channels, just return all free sides (open shape)
+    return freeSides;
   }
 
   if (shape === PORT_SHAPES.U) {

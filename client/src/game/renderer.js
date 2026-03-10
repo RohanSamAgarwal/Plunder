@@ -82,7 +82,7 @@ function computeDepthMap(board, totalCols, totalRows) {
   for (let r = 0; r < totalRows; r++) {
     for (let c = 0; c < totalCols; c++) {
       const t = board[r][c].type;
-      if (t === 'island' || t === 'merchant' || t === 'normal_island' || t === 'port') {
+      if (t === 'island' || t === 'merchant' || t === 'normal_island') {
         depth[r][c] = 0;
         queue.push([c, r]);
       }
@@ -482,12 +482,12 @@ function drawStaticLayer(ctx, canvas, gameState, layout) {
     ctx.fillText(String.fromCharCode(65 + r), boardW + gp + gp / 2, y);
   }
 
-  // Pre-compute island neighbor set for shore blending (includes port tiles)
+  // Pre-compute island neighbor set for shore blending (port tiles NOT included)
   const islandSet = new Set();
   for (let r = 0; r < totalRows; r++) {
     for (let c = 0; c < totalCols; c++) {
       const t = board[r][c];
-      if (t.type === 'island' || t.type === 'merchant' || t.type === 'normal_island' || t.type === 'port') {
+      if (t.type === 'island' || t.type === 'merchant' || t.type === 'normal_island') {
         islandSet.add(`${c},${r}`);
       }
     }
@@ -496,17 +496,12 @@ function drawStaticLayer(ctx, canvas, gameState, layout) {
   // Compute depth map for water color gradients
   const depthMap = computeDepthMap(board, totalCols, totalRows);
 
-  // Compute organic island outlines (include port tile in each island's outline)
+  // Compute organic island outlines (island tiles only — ports handled separately)
   _islandOutlines = new Map();
   for (const [id, island] of Object.entries(islands)) {
     if (island.type === 'obstacle') continue;
     if (!island.tiles || island.tiles.length === 0) continue;
-    // Expand tile set to include port tile so the outline encompasses the harbor
-    const expandedTiles = [...island.tiles];
-    if (island.port) {
-      expandedTiles.push({ col: island.port.col, row: island.port.row });
-    }
-    const outline = computeIslandOutline(expandedTiles, ts, id, gp);
+    const outline = computeIslandOutline(island.tiles, ts, id, gp);
     if (outline) _islandOutlines.set(id, outline);
   }
 
@@ -848,72 +843,98 @@ function drawHarborCove(ctx, island, ts, gp, board) {
   const px = gp + port.col * ts;
   const py = gp + port.row * ts;
   const openSides = port.openSides;
-  const inset = ts * 0.18; // land border thickness on blocked sides
-  const cornerR = ts * 0.12;
-
-  // Determine harbor water bounds — start inset, extend to tile edge on open sides
-  let left = px + inset;
-  let right = px + ts - inset;
-  let top = py + inset;
-  let bottom = py + ts - inset;
-
-  if (openSides.includes('N')) top = py - ts * 0.02;
-  if (openSides.includes('S')) bottom = py + ts + ts * 0.02;
-  if (openSides.includes('W')) left = px - ts * 0.02;
-  if (openSides.includes('E')) right = px + ts + ts * 0.02;
+  const isMerchant = island.type === 'merchant';
+  const landThick = ts * 0.28; // how far land extends into port tile on blocked sides
+  const cornerR = ts * 0.1;
 
   ctx.save();
 
-  // Harbor water fill with rounded corners
+  // ── Step 1: Draw land extensions on BLOCKED sides ──
+  // These connect the island's beach border into the port tile
+  const blockedSides = ['N', 'S', 'E', 'W'].filter(d => !openSides.includes(d));
+  const beachColor = isMerchant ? COLORS.merchantSand : COLORS.beachLight;
+  const sandEdge = isMerchant ? '#b09030' : COLORS.sandDark;
+
+  for (const side of blockedSides) {
+    let lx, ly, lw, lh;
+    if (side === 'N') {
+      lx = px; ly = py; lw = ts; lh = landThick;
+    } else if (side === 'S') {
+      lx = px; ly = py + ts - landThick; lw = ts; lh = landThick;
+    } else if (side === 'W') {
+      lx = px; ly = py; lw = landThick; lh = ts;
+    } else { // E
+      lx = px + ts - landThick; ly = py; lw = landThick; lh = ts;
+    }
+
+    // Beach fill
+    ctx.fillStyle = beachColor;
+    ctx.fillRect(lx, ly, lw, lh);
+
+    // Wet sand edge (inner border facing water)
+    ctx.strokeStyle = sandEdge;
+    ctx.lineWidth = Math.max(1, ts * 0.04);
+    if (side === 'N') {
+      ctx.beginPath(); ctx.moveTo(lx, ly + lh); ctx.lineTo(lx + lw, ly + lh); ctx.stroke();
+    } else if (side === 'S') {
+      ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(lx + lw, ly); ctx.stroke();
+    } else if (side === 'W') {
+      ctx.beginPath(); ctx.moveTo(lx + lw, ly); ctx.lineTo(lx + lw, ly + lh); ctx.stroke();
+    } else {
+      ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(lx, ly + lh); ctx.stroke();
+    }
+
+    // Small vegetation blobs on land
+    const greenColor = isMerchant ? COLORS.merchantGreen : COLORS.green1;
+    const blobSeed = port.col * 11 + port.row * 23 + side.charCodeAt(0);
+    const blobCount = 2 + (blobSeed % 2);
+    for (let b = 0; b < blobCount; b++) {
+      const blobR = ts * 0.04 + ((blobSeed + b * 7) % 3) * ts * 0.01;
+      const bx = lx + lw * 0.2 + ((blobSeed + b * 13) % Math.round(lw * 0.6));
+      const by = ly + lh * 0.2 + ((blobSeed + b * 17) % Math.round(lh * 0.6));
+      ctx.fillStyle = b % 2 === 0 ? greenColor : COLORS.greenDark;
+      ctx.beginPath();
+      ctx.arc(bx, by, blobR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // ── Step 2: Determine harbor water area (center of port tile) ──
+  let wLeft = px + (blockedSides.includes('W') ? landThick : 0);
+  let wTop = py + (blockedSides.includes('N') ? landThick : 0);
+  let wRight = px + ts - (blockedSides.includes('E') ? landThick : 0);
+  let wBottom = py + ts - (blockedSides.includes('S') ? landThick : 0);
+
+  // ── Step 3: Draw harbor water ──
   const harborPath = new Path2D();
-  roundRectPath(harborPath, left, top, right - left, bottom - top, cornerR);
+  roundRectPath(harborPath, wLeft, wTop, wRight - wLeft, wBottom - wTop, cornerR);
   ctx.fillStyle = COLORS.portWater;
   ctx.fill(harborPath);
 
-  // Subtle water ripples inside harbor
+  // Subtle ripples
   ctx.strokeStyle = 'rgba(60,140,180,0.08)';
   ctx.lineWidth = 0.8;
-  const rippleDir = (right - left) > (bottom - top); // horizontal if wider
+  const isWide = (wRight - wLeft) > (wBottom - wTop);
   for (let i = 0; i < 3; i++) {
     ctx.beginPath();
-    if (rippleDir) {
-      const ry = top + (bottom - top) * (0.2 + i * 0.25);
-      ctx.moveTo(left + 3, ry);
-      ctx.quadraticCurveTo((left + right) / 2, ry - ts * 0.015, right - 3, ry);
+    if (isWide) {
+      const ry = wTop + (wBottom - wTop) * (0.2 + i * 0.25);
+      ctx.moveTo(wLeft + 2, ry);
+      ctx.quadraticCurveTo((wLeft + wRight) / 2, ry - ts * 0.012, wRight - 2, ry);
     } else {
-      const rx = left + (right - left) * (0.2 + i * 0.25);
-      ctx.moveTo(rx, top + 3);
-      ctx.quadraticCurveTo(rx - ts * 0.015, (top + bottom) / 2, rx, bottom - 3);
+      const rx = wLeft + (wRight - wLeft) * (0.2 + i * 0.25);
+      ctx.moveTo(rx, wTop + 2);
+      ctx.quadraticCurveTo(rx - ts * 0.012, (wTop + wBottom) / 2, rx, wBottom - 2);
     }
     ctx.stroke();
   }
 
-  // Beach/foam edges where harbor water meets island land (blocked sides)
-  ctx.lineWidth = Math.max(1, ts * 0.03);
-  if (!openSides.includes('N') && top > py) {
-    ctx.strokeStyle = 'rgba(220, 200, 160, 0.5)';
-    ctx.beginPath(); ctx.moveTo(left + cornerR, top); ctx.lineTo(right - cornerR, top); ctx.stroke();
-  }
-  if (!openSides.includes('S') && bottom < py + ts) {
-    ctx.strokeStyle = 'rgba(220, 200, 160, 0.5)';
-    ctx.beginPath(); ctx.moveTo(left + cornerR, bottom); ctx.lineTo(right - cornerR, bottom); ctx.stroke();
-  }
-  if (!openSides.includes('W') && left > px) {
-    ctx.strokeStyle = 'rgba(220, 200, 160, 0.5)';
-    ctx.beginPath(); ctx.moveTo(left, top + cornerR); ctx.lineTo(left, bottom - cornerR); ctx.stroke();
-  }
-  if (!openSides.includes('E') && right < px + ts) {
-    ctx.strokeStyle = 'rgba(220, 200, 160, 0.5)';
-    ctx.beginPath(); ctx.moveTo(right, top + cornerR); ctx.lineTo(right, bottom - cornerR); ctx.stroke();
-  }
+  // ── Step 4: Dock and anchor ──
+  drawHarborDock(ctx, wLeft, wTop, wRight, wBottom, openSides, ts);
 
-  // Draw dock/pier inside the harbor (on the island-facing side)
-  drawHarborDock(ctx, left, top, right, bottom, openSides, ts);
-
-  // Draw anchor icon in the harbor water
-  const anchorCX = (left + right) / 2;
-  const anchorCY = (top + bottom) / 2;
-  drawHarborAnchor(ctx, anchorCX, anchorCY, Math.min(right - left, bottom - top) * 0.45);
+  const anchorCX = (wLeft + wRight) / 2;
+  const anchorCY = (wTop + wBottom) / 2;
+  drawHarborAnchor(ctx, anchorCX, anchorCY, Math.min(wRight - wLeft, wBottom - wTop) * 0.4);
 
   ctx.restore();
 }
