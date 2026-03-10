@@ -883,6 +883,45 @@ function drawHarborCove(ctx, island, ts, gp, board) {
   ctx.fillStyle = COLORS.portWater;
   ctx.fill(innerPath);
 
+  // ── Step 3b: Soft gradient edges where water meets island (blocked sides) ──
+  const fadeW = ts * 0.12; // width of gradient fade strip
+  const waterColor = COLORS.portWater;
+  // Parse portWater hex to rgba for gradient stops
+  const wc = waterColor;
+  const fadeFrom = wc; // opaque
+  const fadeTo = wc.startsWith('#')
+    ? `rgba(${parseInt(wc.slice(1,3),16)},${parseInt(wc.slice(3,5),16)},${parseInt(wc.slice(5,7),16)},0)`
+    : 'rgba(30,85,112,0)';
+
+  for (const side of blockedSides) {
+    let grad;
+    if (side === 'N') {
+      grad = ctx.createLinearGradient(0, iTop, 0, iTop + fadeW);
+      grad.addColorStop(0, fadeTo);
+      grad.addColorStop(1, fadeFrom);
+      ctx.fillStyle = grad;
+      ctx.fillRect(iLeft, iTop, iRight - iLeft, fadeW);
+    } else if (side === 'S') {
+      grad = ctx.createLinearGradient(0, iBottom - fadeW, 0, iBottom);
+      grad.addColorStop(0, fadeFrom);
+      grad.addColorStop(1, fadeTo);
+      ctx.fillStyle = grad;
+      ctx.fillRect(iLeft, iBottom - fadeW, iRight - iLeft, fadeW);
+    } else if (side === 'W') {
+      grad = ctx.createLinearGradient(iLeft, 0, iLeft + fadeW, 0);
+      grad.addColorStop(0, fadeTo);
+      grad.addColorStop(1, fadeFrom);
+      ctx.fillStyle = grad;
+      ctx.fillRect(iLeft, iTop, fadeW, iBottom - iTop);
+    } else { // E
+      grad = ctx.createLinearGradient(iRight - fadeW, 0, iRight, 0);
+      grad.addColorStop(0, fadeFrom);
+      grad.addColorStop(1, fadeTo);
+      ctx.fillStyle = grad;
+      ctx.fillRect(iRight - fadeW, iTop, fadeW, iBottom - iTop);
+    }
+  }
+
   // Subtle ripples inside harbor
   ctx.strokeStyle = 'rgba(60,140,180,0.08)';
   ctx.lineWidth = 0.8;
@@ -981,29 +1020,68 @@ function drawHarborDock(ctx, left, top, right, bottom, openSides, ts) {
 
 function drawHarborAnchor(ctx, cx, cy, size) {
   if (size < 4) return; // too small to render
-  ctx.strokeStyle = 'rgba(154, 176, 192, 0.7)';
-  ctx.lineWidth = Math.max(1.5, size * 0.12);
+  const s = size * 0.45; // drawing scale
+  const lw = Math.max(1.5, size * 0.055);
+
+  ctx.save();
+  ctx.strokeStyle = 'rgba(140, 165, 185, 0.65)';
+  ctx.fillStyle = 'rgba(140, 165, 185, 0.65)';
+  ctx.lineWidth = lw;
   ctx.lineCap = 'round';
-  const s = size * 0.5;
-  // Ring
+  ctx.lineJoin = 'round';
+
+  // Ring (top loop)
+  const ringR = s * 0.14;
+  const ringCY = cy - s * 0.58;
   ctx.beginPath();
-  ctx.arc(cx, cy - s * 0.32, s * 0.08, 0, Math.PI * 2);
+  ctx.arc(cx, ringCY, ringR, 0, Math.PI * 2);
   ctx.stroke();
-  // Shaft
+
+  // Shaft (vertical, from ring bottom to crown)
+  const shaftTop = ringCY + ringR;
+  const shaftBot = cy + s * 0.42;
   ctx.beginPath();
-  ctx.moveTo(cx, cy - s * 0.24);
-  ctx.lineTo(cx, cy + s * 0.25);
+  ctx.moveTo(cx, shaftTop);
+  ctx.lineTo(cx, shaftBot);
   ctx.stroke();
-  // Crossbar
+
+  // Stock / crossbar (near top of shaft)
+  const stockY = cy - s * 0.28;
+  const stockHalf = s * 0.38;
   ctx.beginPath();
-  ctx.moveTo(cx - s * 0.2, cy - s * 0.1);
-  ctx.lineTo(cx + s * 0.2, cy - s * 0.1);
+  ctx.moveTo(cx - stockHalf, stockY);
+  ctx.lineTo(cx + stockHalf, stockY);
   ctx.stroke();
-  // Fluke
+  // Stock end caps (small circles)
+  const capR = lw * 0.7;
+  ctx.beginPath(); ctx.arc(cx - stockHalf, stockY, capR, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx + stockHalf, stockY, capR, 0, Math.PI * 2); ctx.fill();
+
+  // Arms + flukes (curved arms from bottom of shaft outward and upward)
+  const armSpread = s * 0.42;
+  const armTipY = cy + s * 0.05;
+  // Left arm
   ctx.beginPath();
-  ctx.arc(cx, cy + s * 0.1, s * 0.2, 0, Math.PI);
+  ctx.moveTo(cx, shaftBot);
+  ctx.quadraticCurveTo(cx - armSpread * 0.5, shaftBot + s * 0.08, cx - armSpread, armTipY);
   ctx.stroke();
-  ctx.lineCap = 'butt';
+  // Left fluke tip (small upward hook)
+  ctx.beginPath();
+  ctx.moveTo(cx - armSpread, armTipY);
+  ctx.lineTo(cx - armSpread + s * 0.06, armTipY - s * 0.1);
+  ctx.stroke();
+  // Right arm
+  ctx.beginPath();
+  ctx.moveTo(cx, shaftBot);
+  ctx.quadraticCurveTo(cx + armSpread * 0.5, shaftBot + s * 0.08, cx + armSpread, armTipY);
+  ctx.stroke();
+  // Right fluke tip
+  ctx.beginPath();
+  ctx.moveTo(cx + armSpread, armTipY);
+  ctx.lineTo(cx + armSpread - s * 0.06, armTipY - s * 0.1);
+  ctx.stroke();
+
+  ctx.restore();
 }
 
 function drawRockTile(ctx, x, y, col, row, ts, islandSet, tile) {
