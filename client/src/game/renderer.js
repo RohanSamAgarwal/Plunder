@@ -1030,21 +1030,24 @@ function drawLandBarrier(ctx, x, y, ts) {
 // ── Decorations ────────────────────────────────────────────────
 
 function drawSkullBadge(ctx, x, y, skulls, ts) {
-  const skullSize = Math.round(ts * 0.18);
-  const spacing = Math.round(ts * 0.2);
-  const badgeW = skulls * spacing + Math.round(ts * 0.1);
-  const badgeH = Math.round(ts * 0.22);
+  const skullSize = Math.round(ts * 0.32);
+  const spacing = Math.round(ts * 0.34);
+  const badgeW = skulls * spacing + Math.round(ts * 0.16);
+  const badgeH = Math.round(ts * 0.4);
   const bx = x + ts / 2 - badgeW / 2;
   const by = y + Math.round(ts * 0.04);
 
   // Badge background
-  ctx.fillStyle = 'rgba(0,0,0,0.6)';
-  roundRect(ctx, bx, by, badgeW, badgeH, Math.round(ts * 0.04));
+  ctx.fillStyle = 'rgba(0,0,0,0.65)';
+  roundRect(ctx, bx, by, badgeW, badgeH, Math.round(ts * 0.06));
   ctx.fill();
+  ctx.strokeStyle = 'rgba(200, 180, 140, 0.3)';
+  ctx.lineWidth = Math.max(1, ts * 0.015);
+  ctx.stroke();
 
   // Draw skull icons
   for (let i = 0; i < skulls; i++) {
-    const sx = bx + Math.round(ts * 0.05) + i * spacing + spacing / 2;
+    const sx = bx + Math.round(ts * 0.08) + i * spacing + spacing / 2;
     const sy = by + badgeH / 2;
     drawSkullIcon(ctx, sx, sy, skullSize);
   }
