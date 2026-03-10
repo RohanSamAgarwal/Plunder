@@ -849,12 +849,12 @@ function drawHarborCove(ctx, island, ts, gp, board) {
   const openSides = port.openSides;
   const blockedSides = ['N', 'S', 'E', 'W'].filter(d => !openSides.includes(d));
   const harborInset = ts * 0.18; // water starts this far from each blocked side
-  const bleed = ts * 0.25;       // water extends past tile edge on open sides (covers shore ring)
+  const bleed = ts * 0.06;       // tiny bleed covers outline wobble on open sides
   const cornerR = ts * 0.12;
 
   // ── Step 1: Calculate water region bounds ──
   // Blocked sides: water starts harborInset inward (organic island beach remains visible)
-  // Open sides: water extends bleed past the tile boundary (covers shore ring + beach)
+  // Open sides: water extends to tile edge (+tiny bleed for outline wobble)
   const wLeft   = blockedSides.includes('W') ? px + harborInset : px - bleed;
   const wTop    = blockedSides.includes('N') ? py + harborInset : py - bleed;
   const wRight  = blockedSides.includes('E') ? px + ts - harborInset : px + ts + bleed;
@@ -906,7 +906,7 @@ function drawHarborCove(ctx, island, ts, gp, board) {
 
   const anchorCX = (iLeft + iRight) / 2;
   const anchorCY = (iTop + iBottom) / 2;
-  drawHarborAnchor(ctx, anchorCX, anchorCY, Math.min(iRight - iLeft, iBottom - iTop) * 0.65);
+  drawHarborAnchor(ctx, anchorCX, anchorCY, ts * 0.85);
 }
 
 function drawHarborDock(ctx, left, top, right, bottom, openSides, ts) {

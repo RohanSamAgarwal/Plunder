@@ -756,15 +756,27 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
             )}
           </div>
         </div>
-        {/* Zoom indicator — positioned in outer wrapper so it doesn't scroll */}
+        {/* Reset view button — resets zoom and scroll position */}
         {zoomLevel !== 1.0 && (
           <div className="absolute bottom-3 left-3 z-10 flex items-center gap-1.5
                           bg-pirate-dark/80 border border-pirate-tan/20 rounded px-2 py-1
                           text-pirate-tan/70 text-xs select-none cursor-pointer
                           hover:border-pirate-tan/40 hover:text-pirate-tan transition"
-               onClick={() => setZoomLevel(1.0)}
-               title="Click to reset zoom">
-            🔍 {Math.round(zoomLevel * 100)}%
+               onClick={() => {
+                 setZoomLevel(1.0);
+                 const container = boardContainerRef.current;
+                 if (container) {
+                   // Double-RAF ensures scroll reset happens after React re-render
+                   requestAnimationFrame(() => {
+                     requestAnimationFrame(() => {
+                       container.scrollLeft = 0;
+                       container.scrollTop = 0;
+                     });
+                   });
+                 }
+               }}
+               title="Reset zoom and pan">
+            🔍 {Math.round(zoomLevel * 100)}% — Reset View
           </div>
         )}
         </div>
