@@ -848,104 +848,293 @@ function drawHarborCove(ctx, island, ts, gp, board) {
   const py = gp + port.row * ts;
   const openSides = port.openSides;
   const blockedSides = ['N', 'S', 'E', 'W'].filter(d => !openSides.includes(d));
-  const harborInset = ts * 0.18; // water starts this far from each blocked side
+  const inset = ts * 0.20;       // water starts this far from each blocked side
   const bleed = ts * 0.06;       // tiny bleed covers outline wobble on open sides
-  const cornerR = ts * 0.12;
+  const seed = port.col * 17 + port.row * 23;
 
-  // ── Step 1: Calculate water region bounds ──
-  // Blocked sides: water starts harborInset inward (organic island beach remains visible)
-  // Open sides: water extends to tile edge (+tiny bleed for outline wobble)
-  const wLeft   = blockedSides.includes('W') ? px + harborInset : px - bleed;
-  const wTop    = blockedSides.includes('N') ? py + harborInset : py - bleed;
-  const wRight  = blockedSides.includes('E') ? px + ts - harborInset : px + ts + bleed;
-  const wBottom = blockedSides.includes('S') ? py + ts - harborInset : py + ts + bleed;
+  // Edge positions for the harbor water area
+  const eL = blockedSides.includes('W') ? px + inset : px - bleed;
+  const eT = blockedSides.includes('N') ? py + inset : py - bleed;
+  const eR = blockedSides.includes('E') ? px + ts - inset : px + ts + bleed;
+  const eB = blockedSides.includes('S') ? py + ts - inset : py + ts + bleed;
 
-  // ── Step 2: Clip to water region and paint over organic island ──
+  // Inner edge positions (within tile bounds, for drawing details)
+  const iL = blockedSides.includes('W') ? px + inset : px;
+  const iT = blockedSides.includes('N') ? py + inset : py;
+  const iR = blockedSides.includes('E') ? px + ts - inset : px + ts;
+  const iB = blockedSides.includes('S') ? py + ts - inset : py + ts;
+
+  // ── Step 1: Build organic harbor path with wobbled edges ──
+  const harborPath = _buildOrganicHarborPath(eL, eT, eR, eB, blockedSides, ts, seed);
+
+  // ── Step 2: Clip to organic harbor path and clear organic island underneath ──
   ctx.save();
-  ctx.beginPath();
-  ctx.rect(wLeft, wTop, wRight - wLeft, wBottom - wTop);
-  ctx.clip();
-
-  // Fill with harbor water — opaque, covers organic island's beach/shore on open sides
+  ctx.clip(harborPath);
+  // Opaque fill to cover the organic island's beach/shore on open sides
   ctx.fillStyle = COLORS.portWater;
-  ctx.fillRect(wLeft, wTop, wRight - wLeft, wBottom - wTop);
+  ctx.fillRect(eL - 2, eT - 2, eR - eL + 4, eB - eT + 4);
   ctx.restore();
 
-  // ── Step 3: Draw inner harbor water with rounded corners ──
-  // Inner area = within tile bounds, inset from blocked sides
-  const iLeft   = blockedSides.includes('W') ? px + harborInset : px;
-  const iTop    = blockedSides.includes('N') ? py + harborInset : py;
-  const iRight  = blockedSides.includes('E') ? px + ts - harborInset : px + ts;
-  const iBottom = blockedSides.includes('S') ? py + ts - harborInset : py + ts;
+  // ── Step 3: Layered depth fills for natural tidal pool look ──
+  // Shallow outer ring — lighter teal, gives impression of sandy shallow water
+  ctx.fillStyle = 'rgba(60, 150, 160, 0.30)';
+  ctx.fill(harborPath);
 
-  const innerPath = new Path2D();
-  roundRectPath(innerPath, iLeft, iTop, iRight - iLeft, iBottom - iTop, cornerR);
+  // Mid-depth ring (inset further from blocked sides)
+  const midInset = ts * 0.07;
+  const midPath = _buildOrganicHarborPath(
+    eL + (blockedSides.includes('W') ? midInset : 0),
+    eT + (blockedSides.includes('N') ? midInset : 0),
+    eR - (blockedSides.includes('E') ? midInset : 0),
+    eB - (blockedSides.includes('S') ? midInset : 0),
+    blockedSides, ts, seed + 7
+  );
   ctx.fillStyle = COLORS.portWater;
+  ctx.fill(midPath);
+
+  // Inner deeper water
+  const deepInset = ts * 0.13;
+  const innerPath = _buildOrganicHarborPath(
+    eL + (blockedSides.includes('W') ? deepInset : midInset * 0.5),
+    eT + (blockedSides.includes('N') ? deepInset : midInset * 0.5),
+    eR - (blockedSides.includes('E') ? deepInset : midInset * 0.5),
+    eB - (blockedSides.includes('S') ? deepInset : midInset * 0.5),
+    blockedSides, ts, seed + 13
+  );
+  ctx.fillStyle = 'rgba(25, 75, 110, 0.40)';
   ctx.fill(innerPath);
 
-  // ── Step 3b: Soft gradient edges where water meets island (blocked sides) ──
-  const fadeW = ts * 0.12; // width of gradient fade strip
-  const waterColor = COLORS.portWater;
-  // Parse portWater hex to rgba for gradient stops
-  const wc = waterColor;
-  const fadeFrom = wc; // opaque
-  const fadeTo = wc.startsWith('#')
-    ? `rgba(${parseInt(wc.slice(1,3),16)},${parseInt(wc.slice(3,5),16)},${parseInt(wc.slice(5,7),16)},0)`
-    : 'rgba(30,85,112,0)';
-
-  for (const side of blockedSides) {
-    let grad;
-    if (side === 'N') {
-      grad = ctx.createLinearGradient(0, iTop, 0, iTop + fadeW);
-      grad.addColorStop(0, fadeTo);
-      grad.addColorStop(1, fadeFrom);
-      ctx.fillStyle = grad;
-      ctx.fillRect(iLeft, iTop, iRight - iLeft, fadeW);
-    } else if (side === 'S') {
-      grad = ctx.createLinearGradient(0, iBottom - fadeW, 0, iBottom);
-      grad.addColorStop(0, fadeFrom);
-      grad.addColorStop(1, fadeTo);
-      ctx.fillStyle = grad;
-      ctx.fillRect(iLeft, iBottom - fadeW, iRight - iLeft, fadeW);
-    } else if (side === 'W') {
-      grad = ctx.createLinearGradient(iLeft, 0, iLeft + fadeW, 0);
-      grad.addColorStop(0, fadeTo);
-      grad.addColorStop(1, fadeFrom);
-      ctx.fillStyle = grad;
-      ctx.fillRect(iLeft, iTop, fadeW, iBottom - iTop);
-    } else { // E
-      grad = ctx.createLinearGradient(iRight - fadeW, 0, iRight, 0);
-      grad.addColorStop(0, fadeFrom);
-      grad.addColorStop(1, fadeTo);
-      ctx.fillStyle = grad;
-      ctx.fillRect(iRight - fadeW, iTop, fadeW, iBottom - iTop);
-    }
+  // Deep center radial gradient — darkest at center
+  const cx = (iL + iR) / 2, cy = (iT + iB) / 2;
+  const deepR = Math.min(iR - iL, iB - iT) * 0.35;
+  if (deepR > 3) {
+    const deepGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, deepR);
+    deepGrad.addColorStop(0, 'rgba(10, 45, 70, 0.35)');
+    deepGrad.addColorStop(0.6, 'rgba(15, 55, 80, 0.15)');
+    deepGrad.addColorStop(1, 'rgba(15, 55, 80, 0)');
+    ctx.fillStyle = deepGrad;
+    ctx.fill(harborPath);
   }
 
-  // Subtle ripples inside harbor
-  ctx.strokeStyle = 'rgba(60,140,180,0.08)';
-  ctx.lineWidth = 0.8;
-  const isWide = (iRight - iLeft) > (iBottom - iTop);
-  for (let i = 0; i < 3; i++) {
+  // ── Step 4: Foam / sand edge on blocked sides ──
+  ctx.save();
+  ctx.clip(harborPath);
+  for (const side of blockedSides) {
+    const foamSeed = seed + side.charCodeAt(0);
+
+    // Outer foam line — white frothy edge where water meets sand
+    ctx.strokeStyle = 'rgba(220, 235, 245, 0.30)';
+    ctx.lineWidth = Math.max(1.5, ts * 0.035);
     ctx.beginPath();
-    if (isWide) {
-      const ry = iTop + (iBottom - iTop) * (0.2 + i * 0.25);
-      ctx.moveTo(iLeft + 2, ry);
-      ctx.quadraticCurveTo((iLeft + iRight) / 2, ry - ts * 0.012, iRight - 2, ry);
+    if (side === 'N') {
+      _wobbleLine(ctx, iL, iT + ts * 0.015, iR, iT + ts * 0.015, foamSeed, ts * 0.03);
+    } else if (side === 'S') {
+      _wobbleLine(ctx, iL, iB - ts * 0.015, iR, iB - ts * 0.015, foamSeed, ts * 0.03);
+    } else if (side === 'W') {
+      _wobbleLineV(ctx, iL + ts * 0.015, iT, iL + ts * 0.015, iB, foamSeed, ts * 0.03);
     } else {
-      const rx = iLeft + (iRight - iLeft) * (0.2 + i * 0.25);
-      ctx.moveTo(rx, iTop + 2);
-      ctx.quadraticCurveTo(rx - ts * 0.012, (iTop + iBottom) / 2, rx, iBottom - 2);
+      _wobbleLineV(ctx, iR - ts * 0.015, iT, iR - ts * 0.015, iB, foamSeed, ts * 0.03);
+    }
+    ctx.stroke();
+
+    // Mid foam line
+    ctx.strokeStyle = 'rgba(180, 215, 235, 0.18)';
+    ctx.lineWidth = Math.max(1, ts * 0.025);
+    ctx.beginPath();
+    if (side === 'N') {
+      _wobbleLine(ctx, iL, iT + ts * 0.05, iR, iT + ts * 0.05, foamSeed + 5, ts * 0.025);
+    } else if (side === 'S') {
+      _wobbleLine(ctx, iL, iB - ts * 0.05, iR, iB - ts * 0.05, foamSeed + 5, ts * 0.025);
+    } else if (side === 'W') {
+      _wobbleLineV(ctx, iL + ts * 0.05, iT, iL + ts * 0.05, iB, foamSeed + 5, ts * 0.025);
+    } else {
+      _wobbleLineV(ctx, iR - ts * 0.05, iT, iR - ts * 0.05, iB, foamSeed + 5, ts * 0.025);
+    }
+    ctx.stroke();
+
+    // Inner subtle foam
+    ctx.strokeStyle = 'rgba(150, 200, 225, 0.10)';
+    ctx.lineWidth = Math.max(1, ts * 0.015);
+    ctx.beginPath();
+    if (side === 'N') {
+      _wobbleLine(ctx, iL, iT + ts * 0.09, iR, iT + ts * 0.09, foamSeed + 11, ts * 0.02);
+    } else if (side === 'S') {
+      _wobbleLine(ctx, iL, iB - ts * 0.09, iR, iB - ts * 0.09, foamSeed + 11, ts * 0.02);
+    } else if (side === 'W') {
+      _wobbleLineV(ctx, iL + ts * 0.09, iT, iL + ts * 0.09, iB, foamSeed + 11, ts * 0.02);
+    } else {
+      _wobbleLineV(ctx, iR - ts * 0.09, iT, iR - ts * 0.09, iB, foamSeed + 11, ts * 0.02);
     }
     ctx.stroke();
   }
+  ctx.restore();
 
-  // ── Step 4: Dock and anchor ──
-  drawHarborDock(ctx, iLeft, iTop, iRight, iBottom, openSides, ts);
+  // Subtle ripples inside harbor
+  ctx.save();
+  ctx.clip(harborPath);
+  ctx.strokeStyle = 'rgba(60,140,180,0.07)';
+  ctx.lineWidth = 0.8;
+  const isWide = (iR - iL) > (iB - iT);
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    if (isWide) {
+      const ry = iT + (iB - iT) * (0.25 + i * 0.22);
+      _wobbleLine(ctx, iL + 3, ry, iR - 3, ry, seed + 50 + i, ts * 0.01);
+    } else {
+      const rx = iL + (iR - iL) * (0.25 + i * 0.22);
+      _wobbleLineV(ctx, rx, iT + 3, rx, iB - 3, seed + 50 + i, ts * 0.01);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
 
-  const anchorCX = (iLeft + iRight) / 2;
-  const anchorCY = (iTop + iBottom) / 2;
+  // ── Step 5: Dock and anchor ──
+  drawHarborDock(ctx, iL, iT, iR, iB, openSides, ts);
+
+  const anchorCX = (iL + iR) / 2;
+  const anchorCY = (iT + iB) / 2;
   drawHarborAnchor(ctx, anchorCX, anchorCY, ts * 0.85);
+}
+
+// Build an organic (wobbled) path for the harbor water area — natural cove shape
+function _buildOrganicHarborPath(left, top, right, bottom, blockedSides, ts, seed) {
+  const path = new Path2D();
+  const w = (right - left);
+  const h = (bottom - top);
+  const wobbleAmt = ts * 0.06;   // pronounced wobble for natural look
+  function rng(i) { return ((seed * 7 + i * 31 + i * i * 3) % 23) / 23; }  // 0..1 deterministic
+  function wb(i) { return rng(i) * wobbleAmt * 2 - wobbleAmt; }
+
+  // Corner radii — larger where two blocked sides meet (deep cove corners)
+  // smaller where open water meets (gentle entry)
+  const baseR = ts * 0.18;
+  const bigR = ts * 0.32;   // deep concave corners where land wraps around
+  const tl_blocked = blockedSides.includes('N') && blockedSides.includes('W');
+  const tr_blocked = blockedSides.includes('N') && blockedSides.includes('E');
+  const br_blocked = blockedSides.includes('S') && blockedSides.includes('E');
+  const bl_blocked = blockedSides.includes('S') && blockedSides.includes('W');
+
+  const rTL = tl_blocked ? bigR : (blockedSides.includes('N') || blockedSides.includes('W')) ? baseR : baseR * 0.2;
+  const rTR = tr_blocked ? bigR : (blockedSides.includes('N') || blockedSides.includes('E')) ? baseR : baseR * 0.2;
+  const rBR = br_blocked ? bigR : (blockedSides.includes('S') || blockedSides.includes('E')) ? baseR : baseR * 0.2;
+  const rBL = bl_blocked ? bigR : (blockedSides.includes('S') || blockedSides.includes('W')) ? baseR : baseR * 0.2;
+
+  // Start top-left
+  path.moveTo(left + rTL, top + wb(0));
+
+  // Top edge
+  if (blockedSides.includes('N')) {
+    // Scalloped/concave blocked edge — water bites into the sand
+    const segs = 5;
+    for (let i = 0; i < segs; i++) {
+      const t0 = rTL + (w - rTL - rTR) * (i / segs);
+      const t1 = rTL + (w - rTL - rTR) * ((i + 1) / segs);
+      const cx = left + (t0 + t1) / 2;
+      // Push control point INTO the cove (downward for top edge) for concave scallop
+      const cy = top + ts * 0.04 + wb(i + 1) + rng(i + 10) * ts * 0.04;
+      path.quadraticCurveTo(cx, cy, left + t1, top + wb(i + 2));
+    }
+  } else {
+    path.lineTo(right - rTR, top);
+  }
+
+  // TR corner
+  if (tr_blocked) {
+    path.quadraticCurveTo(right + wb(30), top + wb(31), right + wb(32), top + rTR);
+  } else {
+    path.arcTo(right, top, right, top + rTR, rTR);
+  }
+
+  // Right edge
+  if (blockedSides.includes('E')) {
+    const segs = 5;
+    for (let i = 0; i < segs; i++) {
+      const t0 = rTR + (h - rTR - rBR) * (i / segs);
+      const t1 = rTR + (h - rTR - rBR) * ((i + 1) / segs);
+      const cy = top + (t0 + t1) / 2;
+      const cx = right - ts * 0.04 + wb(i + 40) - rng(i + 41) * ts * 0.04;
+      path.quadraticCurveTo(cx, cy, right + wb(i + 42), top + t1);
+    }
+  } else {
+    path.lineTo(right, bottom - rBR);
+  }
+
+  // BR corner
+  if (br_blocked) {
+    path.quadraticCurveTo(right + wb(50), bottom + wb(51), right - rBR, bottom + wb(52));
+  } else {
+    path.arcTo(right, bottom, right - rBR, bottom, rBR);
+  }
+
+  // Bottom edge
+  if (blockedSides.includes('S')) {
+    const segs = 5;
+    for (let i = 0; i < segs; i++) {
+      const t0 = rBR + (w - rBR - rBL) * (i / segs);
+      const t1 = rBR + (w - rBR - rBL) * ((i + 1) / segs);
+      const cx = right - (t0 + t1) / 2;
+      const cy = bottom - ts * 0.04 + wb(i + 60) - rng(i + 61) * ts * 0.04;
+      path.quadraticCurveTo(cx, cy, right - t1, bottom + wb(i + 62));
+    }
+  } else {
+    path.lineTo(left + rBL, bottom);
+  }
+
+  // BL corner
+  if (bl_blocked) {
+    path.quadraticCurveTo(left + wb(70), bottom + wb(71), left + wb(72), bottom - rBL);
+  } else {
+    path.arcTo(left, bottom, left, bottom - rBL, rBL);
+  }
+
+  // Left edge
+  if (blockedSides.includes('W')) {
+    const segs = 5;
+    for (let i = 0; i < segs; i++) {
+      const t0 = rBL + (h - rBL - rTL) * (i / segs);
+      const t1 = rBL + (h - rBL - rTL) * ((i + 1) / segs);
+      const cy = bottom - (t0 + t1) / 2;
+      const cx = left + ts * 0.04 + wb(i + 80) + rng(i + 81) * ts * 0.04;
+      path.quadraticCurveTo(cx, cy, left + wb(i + 82), bottom - t1);
+    }
+  } else {
+    path.lineTo(left, top + rTL);
+  }
+
+  // Close back to start
+  path.quadraticCurveTo(left + wb(90), top + wb(91), left + rTL, top + wb(0));
+  path.closePath();
+  return path;
+}
+
+// Draw a horizontal wobble line (for foam/ripples) — wobbles in Y
+function _wobbleLine(ctx, x1, y1, x2, y2, seed, amp) {
+  const steps = 6;
+  ctx.moveTo(x1, y1);
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    const tMid = (i - 0.5) / steps;
+    const mx = x1 + (x2 - x1) * tMid;
+    const my = y1 + (y2 - y1) * tMid + ((seed * 7 + i * 13 + i * i * 3) % 11) / 11 * amp * 2 - amp;
+    const ex = x1 + (x2 - x1) * t;
+    const ey = y1 + (y2 - y1) * t;
+    ctx.quadraticCurveTo(mx, my, ex, ey);
+  }
+}
+
+// Draw a vertical wobble line (for foam/ripples) — wobbles in X
+function _wobbleLineV(ctx, x1, y1, x2, y2, seed, amp) {
+  const steps = 6;
+  ctx.moveTo(x1, y1);
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    const tMid = (i - 0.5) / steps;
+    const mx = x1 + (x2 - x1) * tMid + ((seed * 7 + i * 13 + i * i * 3) % 11) / 11 * amp * 2 - amp;
+    const my = y1 + (y2 - y1) * tMid;
+    const ex = x1 + (x2 - x1) * t;
+    const ey = y1 + (y2 - y1) * t;
+    ctx.quadraticCurveTo(mx, my, ex, ey);
+  }
 }
 
 function drawHarborDock(ctx, left, top, right, bottom, openSides, ts) {
