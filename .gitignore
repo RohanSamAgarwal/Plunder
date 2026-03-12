@@ -8,3 +8,4 @@ test-*.cjs
 *.pdf
 *.zip
 railway.json
+bug-reports.txt

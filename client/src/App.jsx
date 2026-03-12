@@ -3,6 +3,7 @@ import { useState, useEffect, createContext, useContext } from 'react';
 import { useSocket } from './hooks/useSocket';
 import Home from './components/Lobby/Home';
 import GamePage from './components/Game/GamePage';
+import BugReportButton from './components/BugReportButton';
 
 export const SocketContext = createContext(null);
 export const PlayerContext = createContext(null);
@@ -35,6 +36,7 @@ export default function App() {
             <Route path="/" element={<Home />} />
             <Route path="/game/:code" element={<GamePage />} />
           </Routes>
+          <BugReportButton />
         </div>
       </PlayerContext.Provider>
     </SocketContext.Provider>

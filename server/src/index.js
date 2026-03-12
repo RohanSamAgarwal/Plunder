@@ -4,6 +4,7 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { appendFile } from 'fs';
 import cors from 'cors';
 import { EVENTS, GAME_PHASES, TURN_PHASES, TRADE_KNOWLEDGE } from '../../shared/constants.js';
 import {
@@ -55,6 +56,25 @@ app.get('/api/room/:code', (req, res) => {
   const room = getRoom(req.params.code);
   if (!room) return res.status(404).json({ error: 'Room not found' });
   res.json(getPublicRoomState(room));
+});
+
+// Bug report endpoint
+app.post('/api/bugs', (req, res) => {
+  const { description } = req.body;
+  if (!description || typeof description !== 'string' || !description.trim()) {
+    return res.status(400).json({ error: 'Description is required' });
+  }
+  const timestamp = new Date().toISOString();
+  const entry = `[${timestamp}]\n${description.trim()}\n${'─'.repeat(60)}\n\n`;
+  const filePath = join(__dirname, '../../bug-reports.txt');
+  appendFile(filePath, entry, (err) => {
+    if (err) {
+      console.error('Failed to write bug report:', err);
+      return res.status(500).json({ error: 'Failed to save bug report' });
+    }
+    console.log(`Bug report saved at ${timestamp}`);
+    res.json({ success: true });
+  });
 });
 
 // === SOCKET.IO HANDLERS ===
