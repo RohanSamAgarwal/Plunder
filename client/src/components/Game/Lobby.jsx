@@ -200,6 +200,27 @@ export default function Lobby({ room, playerInfo, messages, onStartGame }) {
                 <option value="hidden">Hidden (Private Trades)</option>
               </select>
             </div>
+            <div>
+              <label className="block text-xs text-pirate-tan/70 mb-1">
+                Reroll Mode
+              </label>
+              <select
+                value={room.settings?.rerollMode ?? 'none'}
+                onChange={(e) =>
+                  emit('update-settings', {
+                    settings: { rerollMode: e.target.value },
+                  })
+                }
+                disabled={!isHost}
+                className={`w-full bg-pirate-dark border border-pirate-tan/30 rounded px-3 py-2
+                           text-sm text-white focus:outline-none focus:border-pirate-gold
+                           ${!isHost ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+              >
+                <option value="none">No Rerolls</option>
+                <option value="one_per_game">1 Reroll Per Game</option>
+                <option value="spend_resources">Spend 3 Resources</option>
+              </select>
+            </div>
           </div>
         </div>
 

@@ -38,6 +38,8 @@ export default function ActionPanel({
   const [shiplessFreeResource, setShiplessFreeResource] = useState('');
   const [shiplessRollResult, setShiplessRollResult] = useState(null);
   const [stormCostDiscards, setStormCostDiscards] = useState({ ...EMPTY_RESOURCES });
+  const [rerollCost, setRerollCost] = useState({ ...EMPTY_RESOURCES });
+  const [showRerollPicker, setShowRerollPicker] = useState(null); // 'sailing' | 'shipless_0' | 'shipless_1' | null
 
   if (!myPlayer) return null;
 
@@ -108,8 +110,55 @@ export default function ActionPanel({
     const result = await emit('shipless-roll', {});
     if (result?.die1 !== undefined) {
       setShiplessRollResult(result);
-      setTimeout(() => setShiplessRollResult(null), 5000);
+      // Don't auto-dismiss if reroll is available
+      if (rerollMode === 'none') {
+        setTimeout(() => setShiplessRollResult(null), 5000);
+      }
     }
+  }
+
+  const rerollMode = gameState?.settings?.rerollMode || 'none';
+  const hasRerolledSailing = gameState?.hasRerolledSailing || false;
+  const hasRerolledShipless = gameState?.hasRerolledShipless || false;
+  const totalResources = Object.values(resources).reduce((s, v) => s + v, 0);
+  const rerollCostTotal = Object.values(rerollCost).reduce((s, v) => s + v, 0);
+
+  function canPlayerReroll() {
+    if (rerollMode === 'none') return false;
+    if (rerollMode === 'one_per_game') return (myPlayer.rerollsUsed || 0) < 1;
+    if (rerollMode === 'spend_resources') return totalResources >= 3;
+    return false;
+  }
+
+  function getRerollLabel() {
+    if (rerollMode === 'one_per_game') return `Reroll (${1 - (myPlayer.rerollsUsed || 0)} left)`;
+    if (rerollMode === 'spend_resources') return 'Reroll (3 Resources)';
+    return 'Reroll';
+  }
+
+  async function handleSailingReroll() {
+    if (rerollMode === 'spend_resources') {
+      if (rerollCostTotal !== 3) return;
+      await emit('reroll-sailing-die', { resourceCost: rerollCost });
+    } else {
+      await emit('reroll-sailing-die', {});
+    }
+    setShowRerollPicker(null);
+    setRerollCost({ ...EMPTY_RESOURCES });
+  }
+
+  async function handleShiplessReroll(dieIndex) {
+    if (rerollMode === 'spend_resources') {
+      if (rerollCostTotal !== 3) return;
+      await emit('reroll-shipless', { dieIndex, resourceCost: rerollCost });
+    } else {
+      await emit('reroll-shipless', { dieIndex });
+    }
+    setShowRerollPicker(null);
+    setRerollCost({ ...EMPTY_RESOURCES });
+    // Refresh the result display
+    const newDice = [...(gameState?.lastShiplessRoll?.dice || [])];
+    setShiplessRollResult(prev => prev ? { ...prev, die1: newDice[0] || prev.die1, die2: newDice[1] || prev.die2 } : null);
   }
 
   const tradeablePlayers = Object.values(gameState.players).filter(
@@ -354,13 +403,78 @@ export default function ActionPanel({
       {shiplessRollResult && (
         <div className="bg-pirate-dark border border-pirate-tan/30 rounded-lg p-3 space-y-2">
           <div className="flex items-center justify-center gap-4">
-            <div className="bg-white text-pirate-dark rounded-lg w-12 h-12 flex items-center justify-center text-xl font-bold shadow-inner">
-              {shiplessRollResult.die1}
+            <div className="flex flex-col items-center gap-1">
+              <div className="bg-white text-pirate-dark rounded-lg w-12 h-12 flex items-center justify-center text-xl font-bold shadow-inner">
+                {gameState?.lastShiplessRoll?.dice?.[0] ?? shiplessRollResult.die1}
+              </div>
+              {!shiplessRollResult.doubles && !hasRerolledShipless && rerollMode !== 'none' && canPlayerReroll() && showRerollPicker !== 'shipless_0' && (
+                <button onClick={() => {
+                  if (rerollMode === 'spend_resources') {
+                    setShowRerollPicker('shipless_0');
+                    setRerollCost({ ...EMPTY_RESOURCES });
+                  } else {
+                    handleShiplessReroll(0);
+                  }
+                }}
+                  className="text-[9px] bg-amber-700 hover:bg-amber-600 text-white px-2 py-0.5 rounded transition">
+                  Reroll
+                </button>
+              )}
             </div>
-            <div className="bg-white text-pirate-dark rounded-lg w-12 h-12 flex items-center justify-center text-xl font-bold shadow-inner">
-              {shiplessRollResult.die2}
+            <div className="flex flex-col items-center gap-1">
+              <div className="bg-white text-pirate-dark rounded-lg w-12 h-12 flex items-center justify-center text-xl font-bold shadow-inner">
+                {gameState?.lastShiplessRoll?.dice?.[1] ?? shiplessRollResult.die2}
+              </div>
+              {!shiplessRollResult.doubles && !hasRerolledShipless && rerollMode !== 'none' && canPlayerReroll() && showRerollPicker !== 'shipless_1' && (
+                <button onClick={() => {
+                  if (rerollMode === 'spend_resources') {
+                    setShowRerollPicker('shipless_1');
+                    setRerollCost({ ...EMPTY_RESOURCES });
+                  } else {
+                    handleShiplessReroll(1);
+                  }
+                }}
+                  className="text-[9px] bg-amber-700 hover:bg-amber-600 text-white px-2 py-0.5 rounded transition">
+                  Reroll
+                </button>
+              )}
             </div>
           </div>
+
+          {/* Resource picker for shipless reroll (spend mode) */}
+          {(showRerollPicker === 'shipless_0' || showRerollPicker === 'shipless_1') && rerollMode === 'spend_resources' && (
+            <div className="bg-pirate-dark border border-amber-500/40 rounded-lg p-2 space-y-2">
+              <p className="text-[10px] text-amber-400 font-bold">
+                Choose 3 resources to reroll die {showRerollPicker === 'shipless_0' ? '1' : '2'}:
+              </p>
+              <div className="grid grid-cols-4 gap-1">
+                {Object.entries(RESOURCE_META).map(([r, meta]) => (
+                  <div key={r} className="text-center">
+                    <div className="text-[10px] font-bold" style={{ color: meta.color }}>{meta.label}</div>
+                    <input type="number" min="0" max={resources[r] || 0} value={rerollCost[r]}
+                      onChange={(e) => setRerollCost(prev => ({ ...prev, [r]: Math.min(parseInt(e.target.value) || 0, resources[r] || 0) }))}
+                      className="w-full bg-pirate-dark border border-pirate-tan/20 rounded text-center text-xs py-0.5 text-white" />
+                  </div>
+                ))}
+              </div>
+              <div className="text-[10px] text-pirate-tan/60 text-right">
+                Selected: {rerollCostTotal} / 3
+              </div>
+              <div className="flex gap-1.5">
+                <button onClick={() => handleShiplessReroll(showRerollPicker === 'shipless_0' ? 0 : 1)}
+                  disabled={rerollCostTotal !== 3}
+                  className="flex-1 bg-amber-700 hover:bg-amber-600 text-white py-1 rounded text-xs transition
+                             disabled:opacity-40 disabled:cursor-not-allowed">
+                  Confirm Reroll
+                </button>
+                <button onClick={() => { setShowRerollPicker(null); setRerollCost({ ...EMPTY_RESOURCES }); }}
+                  className="flex-1 bg-gray-600 hover:bg-gray-500 text-white py-1 rounded text-xs transition">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
           {shiplessRollResult.doubles ? (
             <p className="text-green-400 text-sm font-bold text-center">Doubles! You got a ship!</p>
           ) : (
@@ -442,10 +556,61 @@ export default function ActionPanel({
           )}
 
           {turnPhase === 'perform_actions' && (
-            <div className="text-xs text-pirate-tan bg-pirate-dark/40 rounded px-2 py-1.5">
-              Moves: <span className="text-white font-bold">{gameState.movePointsRemaining}</span>
-              {selectedShip && ' \u2022 Ship selected \u2014 click to move'}
-            </div>
+            <>
+              <div className="text-xs text-pirate-tan bg-pirate-dark/40 rounded px-2 py-1.5">
+                Moves: <span className="text-white font-bold">{gameState.movePointsRemaining}</span>
+                {selectedShip && ' \u2022 Ship selected \u2014 click to move'}
+              </div>
+
+              {/* Sailing Die Reroll */}
+              {!hasRerolledSailing && rerollMode !== 'none' && canPlayerReroll() && (
+                <div className="space-y-1.5">
+                  {showRerollPicker === 'sailing' && rerollMode === 'spend_resources' ? (
+                    <div className="bg-pirate-dark border border-amber-500/40 rounded-lg p-2 space-y-2">
+                      <p className="text-[10px] text-amber-400 font-bold">Choose 3 resources to spend:</p>
+                      <div className="grid grid-cols-4 gap-1">
+                        {Object.entries(RESOURCE_META).map(([r, meta]) => (
+                          <div key={r} className="text-center">
+                            <div className="text-[10px] font-bold" style={{ color: meta.color }}>{meta.label}</div>
+                            <input type="number" min="0" max={resources[r] || 0} value={rerollCost[r]}
+                              onChange={(e) => setRerollCost(prev => ({ ...prev, [r]: Math.min(parseInt(e.target.value) || 0, resources[r] || 0) }))}
+                              className="w-full bg-pirate-dark border border-pirate-tan/20 rounded text-center text-xs py-0.5 text-white" />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="text-[10px] text-pirate-tan/60 text-right">
+                        Selected: {rerollCostTotal} / 3
+                      </div>
+                      <div className="flex gap-1.5">
+                        <button onClick={handleSailingReroll} disabled={rerollCostTotal !== 3}
+                          className="flex-1 bg-amber-700 hover:bg-amber-600 text-white py-1 rounded text-xs transition
+                                     disabled:opacity-40 disabled:cursor-not-allowed">
+                          Confirm Reroll
+                        </button>
+                        <button onClick={() => { setShowRerollPicker(null); setRerollCost({ ...EMPTY_RESOURCES }); }}
+                          className="flex-1 bg-gray-600 hover:bg-gray-500 text-white py-1 rounded text-xs transition">
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        if (rerollMode === 'spend_resources') {
+                          setShowRerollPicker('sailing');
+                          setRerollCost({ ...EMPTY_RESOURCES });
+                        } else {
+                          handleSailingReroll();
+                        }
+                      }}
+                      className="w-full bg-amber-700 hover:bg-amber-600 text-white py-1.5 rounded text-xs transition
+                                 border border-amber-500/40">
+                      🎲 {getRerollLabel()} Die (rolled {gameState.dieRoll})
+                    </button>
+                  )}
+                </div>
+              )}
+            </>
           )}
 
           {/* Attack Island button (when docked at an attackable port) */}
@@ -644,7 +809,7 @@ export default function ActionPanel({
           {/* End Turn */}
           {turnPhase === 'perform_actions' && (
             <button onClick={onEndTurn}
-              disabled={!!gameState.pendingAttack}
+              disabled={!!gameState.pendingAttack || !!gameState.pendingCombatReroll}
               className="w-full bg-red-800 hover:bg-red-700 text-white py-2 rounded text-sm transition mt-2
                          disabled:opacity-40 disabled:cursor-not-allowed">
               End Turn

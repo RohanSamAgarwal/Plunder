@@ -4,6 +4,7 @@ import {
   GAME_PHASES, TURN_PHASES, INITIAL_LIFE_PEGS, WIN_POINTS,
   STORM_SIZE, BUILD_COSTS, RESOURCE_TYPES, TILE_TYPES, SHIPLESS_MODES,
   MAX_CANNONS, MAX_MASTS, MAX_LIFE_PEGS, BRIBE_MODES, TRADE_KNOWLEDGE,
+  REROLL_MODES,
 } from '../../shared/constants.js';
 import { generateBoard, getStartingIslands } from './board.js';
 import { createResourceDeck, createTreasureDeck, drawFromDeck, shuffle } from './decks.js';
@@ -44,6 +45,10 @@ export function createGameState(players, playerCount, settings = {}) {
     pendingTreasure: null, // treasure card awaiting resolution (steal choice, storm discard)
     pendingStormCost: null, // { playerId, amount } — awaiting player choice on which resources to discard for storm entry/exit
     pendingAttack: null, // { type, attackerId, defenderId, attackerShipId, targetId, bribeOffer }
+    pendingCombatReroll: null, // { type, attackerId, attackerShipId, targetId, attackRoll, defenseRoll, ... }
+    lastShiplessRoll: null, // { dice: [die1, die2], playerId } — for reroll reference
+    hasRerolledSailing: false,
+    hasRerolledShipless: false,
     treaties: [], // active treaties: [{ player1, player2, turnNumber }]
     combatLog: [],
     attackedThisTurn: {}, // { [shipId]: Set([targetId1, targetId2]) } — prevents same ship attacking same target twice per turn
@@ -55,6 +60,7 @@ export function createGameState(players, playerCount, settings = {}) {
       bribeMode: settings.bribeMode || BRIBE_MODES.NONE,
       ppToWin: settings.ppToWin || WIN_POINTS,
       tradeKnowledge: settings.tradeKnowledge || TRADE_KNOWLEDGE.OPEN,
+      rerollMode: settings.rerollMode || REROLL_MODES.NONE,
     },
   };
 
@@ -69,6 +75,7 @@ export function createGameState(players, playerCount, settings = {}) {
       resources: { wood: 0, iron: 0, rum: 0, gold: 0 },
       plunderPointCards: 0,
       connected: true,
+      rerollsUsed: 0,
     };
   }
 
@@ -399,6 +406,10 @@ export function shiplessRoll(state, playerId) {
   const die2 = rollDie(6);
   const isDoubles = die1 === die2;
 
+  // Store for potential reroll
+  state.lastShiplessRoll = { dice: [die1, die2], playerId };
+  state.hasRerolledShipless = false;
+
   if (isDoubles) {
     const placement = findShipPlacement(state, player);
     if (placement) {
@@ -542,9 +553,117 @@ export function rollSailingDie(state) {
   return { roll, totalMovePoints, stormMoved, stormPosition: state.storm };
 }
 
+// === REROLL HELPERS ===
+
+function canReroll(state, playerId) {
+  const mode = state.settings.rerollMode;
+  if (mode === REROLL_MODES.NONE) return false;
+  const player = state.players[playerId];
+  if (mode === REROLL_MODES.ONE_PER_GAME) return player.rerollsUsed < 1;
+  if (mode === REROLL_MODES.SPEND_RESOURCES) return true; // cost checked separately
+  return false;
+}
+
+function validateResourceCost(player, resourceCost) {
+  if (!resourceCost || typeof resourceCost !== 'object') return { error: 'Resource cost required' };
+  let total = 0;
+  for (const res of RESOURCE_TYPES) {
+    const amt = resourceCost[res] || 0;
+    if (amt < 0 || !Number.isInteger(amt)) return { error: 'Invalid resource amount' };
+    if (amt > (player.resources[res] || 0)) return { error: `Not enough ${res}` };
+    total += amt;
+  }
+  if (total !== 3) return { error: 'Must spend exactly 3 resources' };
+  return { valid: true };
+}
+
+function consumeReroll(state, playerId, resourceCost) {
+  const player = state.players[playerId];
+  player.rerollsUsed++;
+  if (state.settings.rerollMode === REROLL_MODES.SPEND_RESOURCES && resourceCost) {
+    for (const res of RESOURCE_TYPES) {
+      const amt = resourceCost[res] || 0;
+      if (amt > 0) player.resources[res] -= amt;
+    }
+  }
+}
+
+// === SAILING DIE REROLL ===
+
+export function rerollSailingDie(state, playerId, resourceCost) {
+  const currentId = state.turnOrder[state.currentPlayerIndex];
+  if (currentId !== playerId) return { error: 'Not your turn' };
+  if (!state.hasRolled) return { error: 'Must roll first' };
+  if (state.hasRerolledSailing) return { error: 'Already rerolled this turn' };
+  if (!canReroll(state, playerId)) return { error: 'No reroll available' };
+
+  const player = state.players[playerId];
+  if (state.settings.rerollMode === REROLL_MODES.SPEND_RESOURCES) {
+    const v = validateResourceCost(player, resourceCost);
+    if (v.error) return v;
+  }
+
+  // Re-roll the die (no storm on reroll)
+  const roll = rollDie(6);
+  state.dieRoll = roll;
+  state.hasRerolledSailing = true;
+
+  // Recalculate move points from scratch
+  let totalMovePoints = roll;
+  for (const ship of player.ships) {
+    const effectiveMasts = ship.masts - (ship.mastBuiltThisTurn || 0);
+    totalMovePoints += Math.max(0, effectiveMasts);
+  }
+  state.movePointsRemaining = totalMovePoints;
+
+  consumeReroll(state, playerId, resourceCost);
+
+  return { success: true, roll, totalMovePoints };
+}
+
+// === SHIPLESS DIE REROLL ===
+
+export function rerollShiplessDie(state, playerId, dieIndex, resourceCost) {
+  const player = state.players[playerId];
+  if (player.ships.length > 0) return { error: 'You have ships' };
+  if (!state.lastShiplessRoll) return { error: 'No shipless roll to reroll' };
+  if (state.lastShiplessRoll.playerId !== playerId) return { error: 'Not your roll' };
+  if (state.hasRerolledShipless) return { error: 'Already rerolled shipless dice' };
+  if (dieIndex !== 0 && dieIndex !== 1) return { error: 'Invalid die index' };
+  if (!canReroll(state, playerId)) return { error: 'No reroll available' };
+
+  if (state.settings.rerollMode === REROLL_MODES.SPEND_RESOURCES) {
+    const v = validateResourceCost(player, resourceCost);
+    if (v.error) return v;
+  }
+
+  const dice = [...state.lastShiplessRoll.dice];
+  dice[dieIndex] = rollDie(6);
+  state.lastShiplessRoll.dice = dice;
+  state.hasRerolledShipless = true;
+
+  consumeReroll(state, playerId, resourceCost);
+
+  const isDoubles = dice[0] === dice[1];
+  if (isDoubles) {
+    const placement = findShipPlacement(state, player);
+    if (placement) {
+      const ship = createShip(playerId, placement);
+      ship.builtThisTurn = true;
+      ship.doneForTurn = true;
+      player.ships.push(ship);
+      return { success: true, die1: dice[0], die2: dice[1], doubles: true, gotShip: true };
+    }
+    return { success: true, die1: dice[0], die2: dice[1], doubles: true, gotShip: false, noPort: true };
+  }
+
+  return { success: true, die1: dice[0], die2: dice[1], doubles: false };
+}
+
 export function moveShip(state, playerId, shipId, path) {
   if (state.pendingStormCost) return { error: 'Must resolve storm cost first' };
   if (state.pendingAttack) return { error: 'Must resolve pending attack first' };
+  if (state.pendingCombatReroll) return { error: 'Must resolve combat reroll first' };
 
   const player = state.players[playerId];
   const ship = player.ships.find(s => s.id === shipId);
@@ -1092,52 +1211,124 @@ function validateShipAttack(state, attackerId, attackerShipId, defenderShipId) {
 
 // --- Combat execution helpers ---
 
-function executeIslandCombat(state, playerId, shipId, islandId) {
+function rollCombatDice(state, playerId, shipId, targetId, type) {
   const player = state.players[playerId];
   const ship = player.ships.find(s => s.id === shipId);
+
+  let attackDie = rollDie(6);
+  let defenseDie = rollDie(6);
+  let attackerCannons = ship.cannons;
+  let defenderModifier = 0;
+  let defenderId = null;
+
+  if (type === 'island') {
+    const island = state.islands[targetId];
+    defenderModifier = island.skulls;
+    defenderId = island.owner || null;
+  } else {
+    // ship combat
+    let defenderShip = null;
+    for (const p of Object.values(state.players)) {
+      const s = p.ships.find(s => s.id === targetId);
+      if (s) { defenderShip = s; defenderId = p.id; break; }
+    }
+    defenderModifier = defenderShip ? defenderShip.cannons : 0;
+  }
+
+  return { attackDie, defenseDie, attackerCannons, defenderModifier, defenderId };
+}
+
+function startCombatWithReroll(state, type, attackerId, attackerShipId, targetId) {
+  const { attackDie, defenseDie, attackerCannons, defenderModifier, defenderId } =
+    rollCombatDice(state, attackerId, attackerShipId, targetId, type);
+
+  // Mark attacked this turn
+  if (!state.attackedThisTurn[attackerShipId]) state.attackedThisTurn[attackerShipId] = new Set();
+  state.attackedThisTurn[attackerShipId].add(targetId);
+
+  // Mark ship done
+  const attackerPlayer = state.players[attackerId];
+  const ship = attackerPlayer.ships.find(s => s.id === attackerShipId);
+  if (ship) ship.doneForTurn = true;
+
+  const attackerCanReroll = canReroll(state, attackerId);
+  const defenderCanReroll = defenderId && canReroll(state, defenderId);
+
+  // If neither side can reroll, resolve immediately
+  if (!attackerCanReroll && !defenderCanReroll) {
+    const attackRoll = attackDie + attackerCannons;
+    const defenseRoll = defenseDie + defenderModifier;
+    if (type === 'island') {
+      return resolveIslandCombatFromRolls(state, attackerId, attackerShipId, targetId, attackRoll, defenseRoll);
+    } else {
+      return resolveShipCombatFromRolls(state, attackerId, attackerShipId, targetId, attackRoll, defenseRoll);
+    }
+  }
+
+  // Determine initial phase
+  let initialPhase = 'attacker_reroll';
+  if (!attackerCanReroll) initialPhase = 'defender_reroll';
+
+  state.pendingCombatReroll = {
+    type,
+    attackerId,
+    attackerShipId,
+    targetId,
+    attackDie,
+    defenseDie,
+    attackerCannons,
+    defenderModifier,
+    defenderId,
+    attackerHasRerolled: false,
+    defenderHasRerolled: false,
+    phase: initialPhase,
+  };
+
+  return { success: true, pendingReroll: true };
+}
+
+function resolveIslandCombatFromRolls(state, attackerId, attackerShipId, islandId, attackRoll, defenseRoll) {
+  const player = state.players[attackerId];
+  const ship = player.ships.find(s => s.id === attackerShipId);
   const island = state.islands[islandId];
-
-  const attackRoll = rollDie(6) + ship.cannons;
-  const defenseRoll = rollDie(6) + island.skulls;
   const attackerWins = attackRoll >= defenseRoll;
-  ship.doneForTurn = true;
-
-  if (!state.attackedThisTurn[shipId]) state.attackedThisTurn[shipId] = new Set();
-  state.attackedThisTurn[shipId].add(islandId);
 
   if (attackerWins) {
     if (island.owner) {
       const prevOwner = state.players[island.owner];
       prevOwner.ownedIslands = prevOwner.ownedIslands.filter(id => id !== islandId);
     }
-    island.owner = playerId;
+    island.owner = attackerId;
     player.ownedIslands.push(islandId);
     return { success: true, won: true, attackRoll, defenseRoll };
   } else {
-    ship.lifePegs--;
-    const sunk = ship.lifePegs <= 0;
-    let ownerGotPP = false;
-    if (sunk) {
-      player.ships = player.ships.filter(s => s.id !== shipId);
-      if (player.ships.length === 0) {
-        player.shiplessRecoveryBlocked = true;
-      }
-      if (island.owner && island.owner !== playerId) {
-        const islandOwner = state.players[island.owner];
-        islandOwner.plunderPointCards++;
-        ownerGotPP = true;
-        const total = calculatePlunderPoints(state, island.owner);
-        if (total >= state.settings.ppToWin) {
-          state.phase = GAME_PHASES.GAME_OVER;
-          state.winner = island.owner;
+    if (ship) {
+      ship.lifePegs--;
+      const sunk = ship.lifePegs <= 0;
+      let ownerGotPP = false;
+      if (sunk) {
+        player.ships = player.ships.filter(s => s.id !== attackerShipId);
+        if (player.ships.length === 0) {
+          player.shiplessRecoveryBlocked = true;
+        }
+        if (island.owner && island.owner !== attackerId) {
+          const islandOwner = state.players[island.owner];
+          islandOwner.plunderPointCards++;
+          ownerGotPP = true;
+          const total = calculatePlunderPoints(state, island.owner);
+          if (total >= state.settings.ppToWin) {
+            state.phase = GAME_PHASES.GAME_OVER;
+            state.winner = island.owner;
+          }
         }
       }
+      return { success: true, won: false, attackRoll, defenseRoll, sunk, ownerGotPP };
     }
-    return { success: true, won: false, attackRoll, defenseRoll, sunk, ownerGotPP };
+    return { success: true, won: false, attackRoll, defenseRoll };
   }
 }
 
-function executeShipCombat(state, attackerId, attackerShipId, defenderShipId) {
+function resolveShipCombatFromRolls(state, attackerId, attackerShipId, defenderShipId, attackRoll, defenseRoll) {
   const attacker = state.players[attackerId];
   const attackerShip = attacker.ships.find(s => s.id === attackerShipId);
   let defender = null;
@@ -1146,47 +1337,174 @@ function executeShipCombat(state, attackerId, attackerShipId, defenderShipId) {
     const s = p.ships.find(s => s.id === defenderShipId);
     if (s) { defender = p; defenderShip = s; break; }
   }
+  const attackerWins = attackRoll >= defenseRoll;
+
+  if (attackerWins) {
+    if (defenderShip) {
+      defenderShip.lifePegs--;
+      const sunk = defenderShip.lifePegs <= 0;
+      if (sunk) {
+        defender.ships = defender.ships.filter(s => s.id !== defenderShipId);
+        if (defender.ships.length === 0) {
+          defender.shiplessRecoveryBlocked = true;
+        }
+        attacker.plunderPointCards++;
+        const total = calculatePlunderPoints(state, attackerId);
+        if (total >= state.settings.ppToWin) {
+          state.phase = GAME_PHASES.GAME_OVER;
+          state.winner = attackerId;
+        }
+      }
+      return { success: true, attackerWon: true, attackRoll, defenseRoll, sunk };
+    }
+    return { success: true, attackerWon: true, attackRoll, defenseRoll };
+  } else {
+    if (attackerShip) {
+      attackerShip.lifePegs--;
+      const sunk = attackerShip.lifePegs <= 0;
+      if (sunk) {
+        attacker.ships = attacker.ships.filter(s => s.id !== attackerShipId);
+        if (attacker.ships.length === 0) {
+          attacker.shiplessRecoveryBlocked = true;
+        }
+        if (defender) {
+          defender.plunderPointCards++;
+          const total = calculatePlunderPoints(state, defender.id);
+          if (total >= state.settings.ppToWin) {
+            state.phase = GAME_PHASES.GAME_OVER;
+            state.winner = defender.id;
+          }
+        }
+      }
+      return { success: true, attackerWon: false, attackRoll, defenseRoll, sunk };
+    }
+    return { success: true, attackerWon: false, attackRoll, defenseRoll };
+  }
+}
+
+function executeIslandCombat(state, playerId, shipId, islandId) {
+  const player = state.players[playerId];
+  const ship = player.ships.find(s => s.id === shipId);
+  const island = state.islands[islandId];
+
+  // If rerolls are enabled, enter the reroll flow instead of instant resolve
+  if (state.settings.rerollMode !== REROLL_MODES.NONE) {
+    return startCombatWithReroll(state, 'island', playerId, shipId, islandId);
+  }
+
+  const attackRoll = rollDie(6) + ship.cannons;
+  const defenseRoll = rollDie(6) + island.skulls;
+  ship.doneForTurn = true;
+
+  if (!state.attackedThisTurn[shipId]) state.attackedThisTurn[shipId] = new Set();
+  state.attackedThisTurn[shipId].add(islandId);
+
+  return resolveIslandCombatFromRolls(state, playerId, shipId, islandId, attackRoll, defenseRoll);
+}
+
+function executeShipCombat(state, attackerId, attackerShipId, defenderShipId) {
+  // If rerolls are enabled, enter the reroll flow
+  if (state.settings.rerollMode !== REROLL_MODES.NONE) {
+    return startCombatWithReroll(state, 'ship', attackerId, attackerShipId, defenderShipId);
+  }
+
+  const attacker = state.players[attackerId];
+  const attackerShip = attacker.ships.find(s => s.id === attackerShipId);
+  let defenderShip = null;
+  for (const p of Object.values(state.players)) {
+    const s = p.ships.find(s => s.id === defenderShipId);
+    if (s) { defenderShip = s; break; }
+  }
 
   const attackRoll = rollDie(6) + attackerShip.cannons;
   const defenseRoll = rollDie(6) + defenderShip.cannons;
-  const attackerWins = attackRoll >= defenseRoll;
 
   if (!state.attackedThisTurn[attackerShipId]) state.attackedThisTurn[attackerShipId] = new Set();
   state.attackedThisTurn[attackerShipId].add(defenderShipId);
 
-  if (attackerWins) {
-    defenderShip.lifePegs--;
-    const sunk = defenderShip.lifePegs <= 0;
-    if (sunk) {
-      defender.ships = defender.ships.filter(s => s.id !== defenderShipId);
-      if (defender.ships.length === 0) {
-        defender.shiplessRecoveryBlocked = true;
-      }
-      attacker.plunderPointCards++;
-      const total = calculatePlunderPoints(state, attackerId);
-      if (total >= state.settings.ppToWin) {
-        state.phase = GAME_PHASES.GAME_OVER;
-        state.winner = attackerId;
-      }
-    }
-    return { success: true, attackerWon: true, attackRoll, defenseRoll, sunk };
+  return resolveShipCombatFromRolls(state, attackerId, attackerShipId, defenderShipId, attackRoll, defenseRoll);
+}
+
+// === COMBAT REROLL FUNCTIONS ===
+
+export function rerollCombatDie(state, playerId, resourceCost) {
+  const pending = state.pendingCombatReroll;
+  if (!pending) return { error: 'No pending combat reroll' };
+
+  if (pending.phase === 'attacker_reroll') {
+    if (pending.attackerId !== playerId) return { error: 'Not the attacker' };
+  } else if (pending.phase === 'defender_reroll') {
+    if (pending.defenderId !== playerId) return { error: 'Not the defender' };
   } else {
-    attackerShip.lifePegs--;
-    const sunk = attackerShip.lifePegs <= 0;
-    if (sunk) {
-      attacker.ships = attacker.ships.filter(s => s.id !== attackerShipId);
-      if (attacker.ships.length === 0) {
-        attacker.shiplessRecoveryBlocked = true;
-      }
-      defender.plunderPointCards++;
-      const total = calculatePlunderPoints(state, defender.id);
-      if (total >= state.settings.ppToWin) {
-        state.phase = GAME_PHASES.GAME_OVER;
-        state.winner = defender.id;
-      }
-    }
-    return { success: true, attackerWon: false, attackRoll, defenseRoll, sunk };
+    return { error: 'Combat reroll phase is over' };
   }
+
+  if (!canReroll(state, playerId)) return { error: 'No reroll available' };
+
+  const player = state.players[playerId];
+  if (state.settings.rerollMode === REROLL_MODES.SPEND_RESOURCES) {
+    const v = validateResourceCost(player, resourceCost);
+    if (v.error) return v;
+  }
+
+  if (pending.phase === 'attacker_reroll') {
+    pending.attackDie = rollDie(6);
+    pending.attackerHasRerolled = true;
+    consumeReroll(state, playerId, resourceCost);
+    // Advance to defender phase if there is a defender who can reroll
+    if (pending.defenderId && canReroll(state, pending.defenderId)) {
+      pending.phase = 'defender_reroll';
+    } else {
+      // Skip defender phase, resolve
+      return finishCombatReroll(state);
+    }
+  } else if (pending.phase === 'defender_reroll') {
+    pending.defenseDie = rollDie(6);
+    pending.defenderHasRerolled = true;
+    consumeReroll(state, playerId, resourceCost);
+    return finishCombatReroll(state);
+  }
+
+  return { success: true, phase: pending.phase, pendingCombatReroll: pending };
+}
+
+export function skipCombatReroll(state, playerId) {
+  const pending = state.pendingCombatReroll;
+  if (!pending) return { error: 'No pending combat reroll' };
+
+  if (pending.phase === 'attacker_reroll') {
+    if (pending.attackerId !== playerId) return { error: 'Not the attacker' };
+    // Advance to defender phase if there is a defender who can reroll
+    if (pending.defenderId && canReroll(state, pending.defenderId)) {
+      pending.phase = 'defender_reroll';
+    } else {
+      return finishCombatReroll(state);
+    }
+  } else if (pending.phase === 'defender_reroll') {
+    if (pending.defenderId !== playerId) return { error: 'Not the defender' };
+    return finishCombatReroll(state);
+  } else {
+    return { error: 'Combat reroll phase is over' };
+  }
+
+  return { success: true, phase: pending.phase, pendingCombatReroll: pending };
+}
+
+function finishCombatReroll(state) {
+  const pending = state.pendingCombatReroll;
+  const attackRoll = pending.attackDie + pending.attackerCannons;
+  const defenseRoll = pending.defenseDie + pending.defenderModifier;
+
+  let combat;
+  if (pending.type === 'island') {
+    combat = resolveIslandCombatFromRolls(state, pending.attackerId, pending.attackerShipId, pending.targetId, attackRoll, defenseRoll);
+  } else {
+    combat = resolveShipCombatFromRolls(state, pending.attackerId, pending.attackerShipId, pending.targetId, attackRoll, defenseRoll);
+  }
+
+  const combatType = pending.type;
+  state.pendingCombatReroll = null;
+  return { success: true, resolved: true, combat, combatType, attackRoll, defenseRoll };
 }
 
 // --- Public attack functions (validate → instant or pending) ---
@@ -1497,12 +1815,17 @@ export function merchantBankTrade(state, playerId, give, receive) {
 export function endTurn(state) {
   if (state.pendingStormCost) return { error: 'Must resolve storm cost before ending turn' };
   if (state.pendingAttack) return { error: 'Must resolve pending attack before ending turn' };
+  if (state.pendingCombatReroll) return { error: 'Must resolve combat reroll before ending turn' };
 
   state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.turnOrder.length;
   state.turnPhase = TURN_PHASES.DRAW_RESOURCES;
   state.movePointsRemaining = 0;
   state.dieRoll = 0;
   state.hasRolled = false;
+  state.hasRerolledSailing = false;
+  state.hasRerolledShipless = false;
+  state.lastShiplessRoll = null;
+  state.pendingCombatReroll = null;
   state.pendingTrade = null;
   state.pendingTreasure = null;
   state.pendingAttack = null; // safety fallback
@@ -1562,6 +1885,7 @@ export function getPublicGameState(state, forPlayerId) {
       plunderPoints: calculatePlunderPoints(state, id),
       connected: p.connected,
       shiplessRecoveryBlocked: p.shiplessRecoveryBlocked || false,
+      rerollsUsed: p.rerollsUsed || 0,
     };
   }
 
@@ -1616,6 +1940,23 @@ export function getPublicGameState(state, forPlayerId) {
     treaties: state.treaties.filter(t => t.turnNumber === state.turnNumber),
     settings: state.settings,
     atMerchant: forPlayerId ? isPlayerAtMerchant(state, forPlayerId) : false,
+    hasRerolledSailing: state.hasRerolledSailing || false,
+    hasRerolledShipless: state.hasRerolledShipless || false,
+    lastShiplessRoll: state.lastShiplessRoll || null,
+    pendingCombatReroll: state.pendingCombatReroll ? {
+      type: state.pendingCombatReroll.type,
+      attackerId: state.pendingCombatReroll.attackerId,
+      attackerShipId: state.pendingCombatReroll.attackerShipId,
+      targetId: state.pendingCombatReroll.targetId,
+      attackDie: state.pendingCombatReroll.attackDie,
+      defenseDie: state.pendingCombatReroll.defenseDie,
+      attackerCannons: state.pendingCombatReroll.attackerCannons,
+      defenderModifier: state.pendingCombatReroll.defenderModifier,
+      defenderId: state.pendingCombatReroll.defenderId,
+      attackerHasRerolled: state.pendingCombatReroll.attackerHasRerolled,
+      defenderHasRerolled: state.pendingCombatReroll.defenderHasRerolled,
+      phase: state.pendingCombatReroll.phase,
+    } : null,
   };
 }
 

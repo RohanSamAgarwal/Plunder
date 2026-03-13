@@ -392,6 +392,38 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
 
   const myResources = myPlayer?.resources || {};
 
+  // Combat reroll state
+  const [combatRerollCost, setCombatRerollCost] = useState({ ...EMPTY_RESOURCES });
+  const [showCombatRerollPicker, setShowCombatRerollPicker] = useState(false);
+  const pendingCombatReroll = gameState?.pendingCombatReroll;
+  const rerollMode = gameState?.settings?.rerollMode || 'none';
+
+  const isMyCombatRerollTurn = (() => {
+    if (!pendingCombatReroll) return false;
+    if (pendingCombatReroll.phase === 'attacker_reroll' && pendingCombatReroll.attackerId === myPlayer?.id) return true;
+    if (pendingCombatReroll.phase === 'defender_reroll' && pendingCombatReroll.defenderId === myPlayer?.id) return true;
+    return false;
+  })();
+
+  const combatRerollCostTotal = Object.values(combatRerollCost).reduce((s, v) => s + v, 0);
+
+  async function handleCombatReroll() {
+    if (rerollMode === 'spend_resources') {
+      if (combatRerollCostTotal !== 3) return;
+      await emit('reroll-combat', { resourceCost: combatRerollCost });
+    } else {
+      await emit('reroll-combat', {});
+    }
+    setShowCombatRerollPicker(false);
+    setCombatRerollCost({ ...EMPTY_RESOURCES });
+  }
+
+  async function handleSkipCombatReroll() {
+    await emit('skip-combat-reroll', {});
+    setShowCombatRerollPicker(false);
+    setCombatRerollCost({ ...EMPTY_RESOURCES });
+  }
+
   if (!gameState) return <div className="text-pirate-tan p-4">Loading game...</div>;
 
   const currentPlayer = gameState.players[currentPlayerId];
@@ -607,6 +639,99 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
               Cancel Attack
             </button>
           </div>
+        </div>
+      )}
+
+      {/* ═══ Combat Reroll Popup ═══ */}
+      {isMyCombatRerollTurn && pendingCombatReroll && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50
+                        bg-pirate-brown border border-amber-500/50 p-4 rounded-lg shadow-lg max-w-sm w-80">
+          <h3 className="text-amber-400 font-pirate text-lg mb-2">Combat Reroll</h3>
+          <p className="text-sm text-pirate-tan mb-3">
+            {pendingCombatReroll.phase === 'attacker_reroll' ? 'You are the attacker.' : 'You are the defender.'}
+            {' '}Reroll your die?
+          </p>
+
+          {/* Dice display */}
+          <div className="flex items-center justify-center gap-4 mb-3">
+            <div className="text-center">
+              <div className="text-[10px] text-pirate-tan/70 mb-1">Attack</div>
+              <div className={`rounded-lg w-12 h-12 flex items-center justify-center text-xl font-bold shadow-inner
+                              ${pendingCombatReroll.phase === 'attacker_reroll' ? 'bg-amber-100 text-amber-800 border-2 border-amber-400' : 'bg-white text-pirate-dark'}`}>
+                {pendingCombatReroll.attackDie}
+              </div>
+              <div className="text-[10px] text-pirate-tan/50 mt-0.5">+{pendingCombatReroll.attackerCannons} cannons</div>
+              <div className="text-xs font-bold text-white">= {pendingCombatReroll.attackDie + pendingCombatReroll.attackerCannons}</div>
+            </div>
+            <div className="text-pirate-tan/40 text-lg font-bold">vs</div>
+            <div className="text-center">
+              <div className="text-[10px] text-pirate-tan/70 mb-1">Defense</div>
+              <div className={`rounded-lg w-12 h-12 flex items-center justify-center text-xl font-bold shadow-inner
+                              ${pendingCombatReroll.phase === 'defender_reroll' ? 'bg-amber-100 text-amber-800 border-2 border-amber-400' : 'bg-white text-pirate-dark'}`}>
+                {pendingCombatReroll.defenseDie}
+              </div>
+              <div className="text-[10px] text-pirate-tan/50 mt-0.5">
+                +{pendingCombatReroll.defenderModifier} {pendingCombatReroll.type === 'island' ? 'skulls' : 'cannons'}
+              </div>
+              <div className="text-xs font-bold text-white">= {pendingCombatReroll.defenseDie + pendingCombatReroll.defenderModifier}</div>
+            </div>
+          </div>
+
+          {/* Resource picker for spend mode */}
+          {showCombatRerollPicker && rerollMode === 'spend_resources' && (
+            <div className="bg-pirate-dark border border-amber-500/40 rounded-lg p-2 space-y-2 mb-3">
+              <p className="text-[10px] text-amber-400 font-bold">Choose 3 resources to spend:</p>
+              <div className="grid grid-cols-4 gap-1">
+                {Object.entries(RESOURCE_META).map(([r, meta]) => (
+                  <div key={r} className="text-center">
+                    <div className="text-[10px] font-bold" style={{ color: meta.color }}>{meta.label}</div>
+                    <input type="number" min="0" max={myResources[r] || 0} value={combatRerollCost[r]}
+                      onChange={(e) => setCombatRerollCost(prev => ({ ...prev, [r]: Math.min(parseInt(e.target.value) || 0, myResources[r] || 0) }))}
+                      className="w-full bg-pirate-dark border border-pirate-tan/20 rounded text-center text-xs py-0.5 text-white" />
+                  </div>
+                ))}
+              </div>
+              <div className="text-[10px] text-pirate-tan/60 text-right">
+                Selected: {combatRerollCostTotal} / 3
+              </div>
+              <div className="flex gap-1.5">
+                <button onClick={handleCombatReroll} disabled={combatRerollCostTotal !== 3}
+                  className="flex-1 bg-amber-700 hover:bg-amber-600 text-white py-1 rounded text-xs transition
+                             disabled:opacity-40 disabled:cursor-not-allowed">
+                  Confirm Reroll
+                </button>
+                <button onClick={() => { setShowCombatRerollPicker(false); setCombatRerollCost({ ...EMPTY_RESOURCES }); }}
+                  className="flex-1 bg-gray-600 hover:bg-gray-500 text-white py-1 rounded text-xs transition">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Action buttons */}
+          {!showCombatRerollPicker && (
+            <div className="flex gap-2">
+              <button onClick={() => {
+                if (rerollMode === 'spend_resources') {
+                  setShowCombatRerollPicker(true);
+                  setCombatRerollCost({ ...EMPTY_RESOURCES });
+                } else {
+                  handleCombatReroll();
+                }
+              }}
+                className="flex-1 bg-amber-700 hover:bg-amber-600 text-white py-1.5 rounded text-sm font-bold transition">
+                🎲 Reroll {rerollMode === 'one_per_game'
+                  ? `(${1 - (myPlayer?.rerollsUsed || 0)} left)`
+                  : rerollMode === 'spend_resources'
+                    ? '(3 Resources)'
+                    : ''}
+              </button>
+              <button onClick={handleSkipCombatReroll}
+                className="flex-1 bg-gray-600 hover:bg-gray-500 text-white py-1.5 rounded text-sm transition">
+                Keep Roll
+              </button>
+            </div>
+          )}
         </div>
       )}
 

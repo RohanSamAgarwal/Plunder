@@ -21,6 +21,7 @@ import {
   shiplessRoll, shiplessExchangePP, shiplessExchangeGold,
   shiplessDisownIsland, shiplessChooseResource,
   submitBribeOffer, resolveAttackBribe, cancelPendingAttackForPlayer,
+  rerollSailingDie, rerollShiplessDie, rerollCombatDie, skipCombatReroll,
 } from './gameState.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -340,6 +341,9 @@ io.on('connection', (socket) => {
         });
       }
       callback?.({ success: true, pending: true });
+    } else if (result.pendingReroll) {
+      // Combat reroll flow: dice rolled, awaiting reroll decisions
+      callback?.({ success: true, pendingReroll: true });
     } else {
       callback?.(result);
       const island = state.islands[islandId];
@@ -375,6 +379,9 @@ io.on('connection', (socket) => {
         });
       }
       callback?.({ success: true, pending: true });
+    } else if (result.pendingReroll) {
+      // Combat reroll flow: dice rolled, awaiting reroll decisions
+      callback?.({ success: true, pendingReroll: true });
     } else {
       callback?.(result);
       // Find attacker ship position for the animation location
@@ -436,11 +443,85 @@ io.on('connection', (socket) => {
       attackCancelled: result.attackCancelled || false,
     });
 
-    // Also emit COMBAT_RESULT if combat happened (for chat log)
-    if (result.combat) {
+    // Also emit COMBAT_RESULT if combat happened and resolved (not pending reroll)
+    if (result.combat && !result.combat.pendingReroll) {
       io.to(found.room.code).emit(EVENTS.COMBAT_RESULT, {
         type: pendingType || 'ship',
         attacker: found.player.name,
+        ...result.combat,
+      });
+    }
+  });
+
+  // --- REROLL HANDLERS ---
+
+  socket.on(EVENTS.REROLL_SAILING_DIE, ({ resourceCost }, callback) => {
+    const found = getRoomBySocketId(socket.id);
+    if (!found || !found.room.gameState) return callback?.({ error: 'No game' });
+
+    const state = found.room.gameState;
+    const result = rerollSailingDie(state, found.player.id, resourceCost);
+    if (result.error) return callback?.(result);
+
+    broadcastGameState(found.room);
+    callback?.(result);
+
+    io.to(found.room.code).emit(EVENTS.DIE_ROLLED, {
+      playerId: found.player.id,
+      reroll: true,
+      ...result,
+    });
+  });
+
+  socket.on(EVENTS.REROLL_SHIPLESS, ({ dieIndex, resourceCost }, callback) => {
+    const found = getRoomBySocketId(socket.id);
+    if (!found || !found.room.gameState) return callback?.({ error: 'No game' });
+
+    const state = found.room.gameState;
+    const result = rerollShiplessDie(state, found.player.id, dieIndex, resourceCost);
+    if (result.error) return callback?.(result);
+
+    broadcastGameState(found.room);
+    callback?.(result);
+  });
+
+  socket.on(EVENTS.REROLL_COMBAT, ({ resourceCost }, callback) => {
+    const found = getRoomBySocketId(socket.id);
+    if (!found || !found.room.gameState) return callback?.({ error: 'No game' });
+
+    const state = found.room.gameState;
+    const result = rerollCombatDie(state, found.player.id, resourceCost);
+    if (result.error) return callback?.(result);
+
+    broadcastGameState(found.room);
+    callback?.(result);
+
+    if (result.resolved && result.combat) {
+      io.to(found.room.code).emit(EVENTS.COMBAT_RESULT, {
+        type: result.combatType || 'ship',
+        attacker: found.player.name,
+        ...result.combat,
+      });
+    }
+  });
+
+  socket.on(EVENTS.SKIP_COMBAT_REROLL, (_, callback) => {
+    const found = getRoomBySocketId(socket.id);
+    if (!found || !found.room.gameState) return callback?.({ error: 'No game' });
+
+    const state = found.room.gameState;
+    const result = skipCombatReroll(state, found.player.id);
+    if (result.error) return callback?.(result);
+
+    broadcastGameState(found.room);
+    callback?.(result);
+
+    if (result.resolved && result.combat) {
+      const attackerName = found.room.players.find(p => p.id === result.combat?.attackerId)?.name
+        || found.player.name;
+      io.to(found.room.code).emit(EVENTS.COMBAT_RESULT, {
+        type: result.combatType || 'ship',
+        attacker: attackerName,
         ...result.combat,
       });
     }

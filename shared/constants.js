@@ -73,6 +73,13 @@ export const BRIBE_MODES = {
   RUTHLESS: 'ruthless',  // Can accept bribe AND still attack
 };
 
+// Reroll modes (configurable in lobby)
+export const REROLL_MODES = {
+  NONE: 'none',                   // No rerolls allowed
+  ONE_PER_GAME: 'one_per_game',   // Each player gets 1 reroll for the entire game
+  SPEND_RESOURCES: 'spend_resources', // Spend any 3 resources to reroll one die
+};
+
 export const EVENTS = {
   // Lobby
   CREATE_ROOM: 'create-room',
@@ -136,6 +143,12 @@ export const EVENTS = {
   ATTACK_BRIBE_DECISION: 'attack-bribe-decision',
   ATTACK_BRIBE_RESOLVE: 'attack-bribe-resolve',
   ATTACK_BRIBE_RESOLVED: 'attack-bribe-resolved',
+  // Reroll events
+  REROLL_SAILING_DIE: 'reroll-sailing-die',
+  REROLL_SHIPLESS: 'reroll-shipless',
+  REROLL_COMBAT: 'reroll-combat',
+  SKIP_COMBAT_REROLL: 'skip-combat-reroll',
+  COMBAT_REROLL_UPDATE: 'combat-reroll-update',
   END_TURN: 'end-turn',
   TURN_ENDED: 'turn-ended',
   GAME_OVER: 'game-over',
