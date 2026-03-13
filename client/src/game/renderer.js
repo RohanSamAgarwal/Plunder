@@ -693,44 +693,14 @@ function drawDynamicLayer(ctx, gameState, options, layout) {
 // ── Tile Renderers ─────────────────────────────────────────────
 
 function drawSeaTile(ctx, x, y, col, row, ts, islandSet, depthMap) {
-  // Depth-aware base: dark moody ocean with bright shallows near islands
+  // Uniform dark ocean base
   const dist = depthMap ? depthMap[row]?.[col] ?? 4 : 4;
-
-  let base;
-  if (dist <= 1) {
-    base = '#14586a'; // shallow — teal near islands
-  } else if (dist === 2) {
-    base = '#0b3040'; // gentle transition
-  } else {
-    base = '#092a3a'; // deep ocean — uniform dark
-  }
-  ctx.fillStyle = base;
+  ctx.fillStyle = '#092a3a';
   ctx.fillRect(x, y, ts, ts);
-
-  // Very subtle per-tile noise for painterly texture (not visible as checkerboard)
-  const noiseSeed = col * 31 + row * 47;
-  const noiseVal = ((noiseSeed * 13 + 7) % 20) - 10;
-  if (noiseVal > 5) {
-    ctx.fillStyle = 'rgba(15, 50, 75, 0.04)';
-    ctx.fillRect(x, y, ts, ts);
-  } else if (noiseVal < -5) {
-    ctx.fillStyle = 'rgba(5, 15, 25, 0.05)';
-    ctx.fillRect(x, y, ts, ts);
-  }
-
-  // Shallow water turquoise shimmer
-  if (dist <= 1) {
-    const grad = ctx.createRadialGradient(x + ts / 2, y + ts / 2, ts * 0.05, x + ts / 2, y + ts / 2, ts * 0.8);
-    grad.addColorStop(0, 'rgba(40, 180, 210, 0.15)');
-    grad.addColorStop(0.6, 'rgba(30, 140, 170, 0.08)');
-    grad.addColorStop(1, 'transparent');
-    ctx.fillStyle = grad;
-    ctx.fillRect(x, y, ts, ts);
-  }
 
   // Wave lines (6 per tile with varied amplitude, more visible)
   const seed = (col * 7 + row * 13) % 17;
-  const waveAlphaScale = dist <= 1 ? 0.7 : 1.0;
+  const waveAlphaScale = 1.0;
   for (let i = 0; i < 6; i++) {
     const waveOpacity = (0.06 + (i % 3) * 0.03) * waveAlphaScale;
     ctx.strokeStyle = `rgba(120, 200, 235, ${waveOpacity})`;
@@ -750,7 +720,7 @@ function drawSeaTile(ctx, x, y, col, row, ts, islandSet, depthMap) {
     const fx = x + ((seed * 11 + i * 41) % Math.round(ts * 0.6)) + ts * 0.2;
     const fy = y + ((seed * 19 + i * 37) % Math.round(ts * 0.6)) + ts * 0.2;
     const fr = ts * 0.025 + ((seed + i * 7) % 4) * ts * 0.008;
-    const foamAlpha = dist <= 2 ? 0.12 : 0.06;
+    const foamAlpha = 0.06;
     ctx.fillStyle = `rgba(200, 230, 250, ${foamAlpha})`;
     ctx.beginPath();
     ctx.arc(fx, fy, fr, 0, Math.PI * 2);
@@ -764,7 +734,7 @@ function drawSeaTile(ctx, x, y, col, row, ts, islandSet, depthMap) {
 
   // Caustic light spots (2-3 per tile, brighter in shallow water)
   const causticCount = 2 + (seed % 2);
-  const causticAlpha = dist <= 2 ? 0.10 : 0.06;
+  const causticAlpha = 0.06;
   for (let i = 0; i < causticCount; i++) {
     const cx = x + ((seed * 11 + i * 31) % Math.round(ts * 0.7)) + ts * 0.15;
     const cy = y + ((seed * 17 + i * 23) % Math.round(ts * 0.7)) + ts * 0.15;
