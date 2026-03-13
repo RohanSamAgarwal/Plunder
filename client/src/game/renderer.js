@@ -3,64 +3,65 @@
 // Dynamically sized for any viewport — targets ~80px tiles at 1920×1080
 
 const COLORS = {
-  // Ocean
-  sea1: '#1a4a6b',
-  sea2: '#174060',
-  seaDeep: '#0f2d45',
-  seaShallow: '#1f6080',
-  seaFoam: '#2a7a9a',
-  seaCaustic: 'rgba(80,200,240,0.06)',
-  seaWave: 'rgba(100,180,220,0.10)',
+  // Ocean — dark moody navy/teal
+  sea1: '#0d2b3e',
+  sea2: '#0a2233',
+  seaDeep: '#071a2a',
+  seaShallow: '#145068',
+  seaFoam: '#1a6a80',
+  seaCaustic: 'rgba(60,190,230,0.08)',
+  seaWave: 'rgba(140,210,240,0.12)',
+  seaFoamWhite: 'rgba(220,240,255,0.18)',
   // Beach / Shore
   sand: '#d4b067',
   sandDark: '#b8963a',
   sandWet: '#a08540',
-  beachLight: '#e8cc88',
+  beachLight: '#e0c478',
   beachWet: '#8a7538',
-  beachFoam: 'rgba(220,240,255,0.18)',
-  // Vegetation
-  green1: '#4a8c3f',
-  green2: '#3d7a34',
-  greenDark: '#2d5c26',
-  greenLight: '#5aad4a',
-  palmTrunk: '#6b4226',
-  palmFrond: '#3d8b2f',
-  palmFrondLight: '#5aad3a',
-  flowerRed: '#c0392b',
-  flowerYellow: '#f1c40f',
-  cliffBrown: '#5a4030',
+  beachFoam: 'rgba(220,240,255,0.22)',
+  // Vegetation — richer, darker aerial canopy
+  green1: '#3a7a30',
+  green2: '#2d6628',
+  greenDark: '#1e4a1a',
+  greenLight: '#4a9a3a',
+  palmTrunk: '#5a3820',
+  palmFrond: '#2d7524',
+  palmFrondLight: '#4a9a30',
+  flowerRed: '#a03020',
+  flowerYellow: '#d4a80c',
+  cliffBrown: '#4a3525',
   // Merchant
   merchantSand: '#c9a84c',
-  merchantGreen: '#5a9944',
+  merchantGreen: '#4a8838',
   canopyRed: '#b03030',
   crateWood: '#7a5a30',
   // Obstacles / normal islands
-  rock: '#6b6b5a',
-  rockDark: '#4a4a3d',
-  rockLight: '#8a8a76',
-  coralPink: '#c0756b',
-  coralOrange: '#d4845a',
-  seaweedGreen: '#2d6b3a',
-  tidePool: '#1a5060',
-  barnacle: '#9a9080',
+  rock: '#5a5a4a',
+  rockDark: '#3a3a30',
+  rockLight: '#7a7a66',
+  coralPink: '#a06058',
+  coralOrange: '#b87048',
+  seaweedGreen: '#1e5a2a',
+  tidePool: '#0f3a48',
+  barnacle: '#8a8070',
   // Port
-  portWater: '#1e5570',
+  portWater: '#0e3a50',
   portDock: '#8b7355',
   portDockLight: '#a08a66',
   plankDark: '#6b5030',
   ropeColor: '#a09070',
   lanternGlow: 'rgba(255,200,80,0.25)',
   // Storm
-  stormDark: 'rgba(40, 15, 70, 0.38)',
-  stormLight: 'rgba(60, 25, 100, 0.2)',
+  stormDark: 'rgba(40, 15, 70, 0.45)',
+  stormLight: 'rgba(60, 25, 100, 0.25)',
   stormBorder: '#8b5cf6',
-  stormCloud: 'rgba(30,15,50,0.15)',
-  rainDrop: 'rgba(180,200,220,0.18)',
+  stormCloud: 'rgba(30,15,50,0.20)',
+  rainDrop: 'rgba(180,200,220,0.22)',
   // Treasure
   treasure: '#ffd700',
   // UI
-  gridLine: 'rgba(255,255,255,0.04)',
-  gridLabel: '#6b6050',
+  gridLine: 'rgba(255,255,255,0.12)',
+  gridLabel: '#7a7060',
   highlight: 'rgba(255, 215, 0, 0.3)',
   moveHighlight: 'rgba(0, 200, 255, 0.2)',
   moveBorder: 'rgba(0, 200, 255, 0.55)',
@@ -275,17 +276,21 @@ function roundRectPath(path, x, y, w, h, r) {
 // ── Organic Island Drawing ──────────────────────────────────────
 function drawShoreRing(ctx, outlinePath, ts) {
   ctx.save();
-  // Outer shallow-water glow
-  ctx.strokeStyle = 'rgba(100, 180, 210, 0.12)';
-  ctx.lineWidth = ts * 0.4;
   ctx.lineJoin = 'round';
+  // Wide outer turquoise glow — prominent shallow water ring
+  ctx.strokeStyle = 'rgba(30, 160, 200, 0.18)';
+  ctx.lineWidth = ts * 0.65;
   ctx.stroke(outlinePath);
-  // Inner shore wash
-  ctx.strokeStyle = 'rgba(160, 210, 230, 0.18)';
+  // Mid shallow-water glow — brighter turquoise
+  ctx.strokeStyle = 'rgba(50, 190, 220, 0.22)';
+  ctx.lineWidth = ts * 0.4;
+  ctx.stroke(outlinePath);
+  // Inner shore wash — bright cyan
+  ctx.strokeStyle = 'rgba(100, 220, 240, 0.20)';
   ctx.lineWidth = ts * 0.2;
   ctx.stroke(outlinePath);
-  // Foam edge
-  ctx.strokeStyle = 'rgba(220, 240, 255, 0.15)';
+  // Bright foam edge — white froth
+  ctx.strokeStyle = 'rgba(220, 245, 255, 0.25)';
   ctx.lineWidth = ts * 0.08;
   ctx.stroke(outlinePath);
   ctx.restore();
@@ -310,40 +315,39 @@ function drawOrganicIsland(ctx, island, outline, ts, gp, islandSet) {
   ctx.lineWidth = ts * 0.14;
   ctx.stroke(path);
 
-  // Inner vegetation
-  const innerPad = -ts * 0.15;
+  // Inner vegetation — dense aerial canopy
+  const innerPad = -ts * 0.12;
   const innerOutline = computeIslandOutline(island.tiles, ts, island.id + '_inner', gp, innerPad);
   if (innerOutline) {
     const greenVar = isMerchant ? COLORS.merchantGreen : COLORS.green1;
     ctx.fillStyle = greenVar;
     ctx.fill(innerOutline.path);
 
-    // Vegetation blobs
+    // Dense vegetation canopy blobs — more blobs, larger, for thick aerial forest look
     for (const tile of island.tiles) {
       const tx = gp + tile.col * ts + ts / 2;
       const ty = gp + tile.row * ts + ts / 2;
       const blobSeed = tile.col * 7 + tile.row * 13;
-      const blobCount = 3 + (blobSeed % 3);
+      const blobCount = 5 + (blobSeed % 3);
       for (let b = 0; b < blobCount; b++) {
-        const blobR = ts * 0.07 + ((blobSeed + b * 11) % 5) * ts * 0.012;
-        const bx = tx + ((blobSeed + b * 19) % Math.round(ts * 0.5)) - ts * 0.25;
-        const by = ty + ((blobSeed + b * 17) % Math.round(ts * 0.5)) - ts * 0.25;
-        const bColor = b % 3 === 0 ? COLORS.greenDark : (b % 3 === 1 ? greenVar : COLORS.greenLight);
+        const blobR = ts * 0.08 + ((blobSeed + b * 11) % 5) * ts * 0.018;
+        const bx = tx + ((blobSeed + b * 19) % Math.round(ts * 0.6)) - ts * 0.3;
+        const by = ty + ((blobSeed + b * 17) % Math.round(ts * 0.6)) - ts * 0.3;
+        const bColor = b % 4 === 0 ? COLORS.greenDark : (b % 4 === 1 ? greenVar : (b % 4 === 2 ? COLORS.greenLight : COLORS.green2));
         ctx.fillStyle = bColor;
         ctx.beginPath();
         ctx.arc(bx, by, blobR, 0, Math.PI * 2);
         ctx.fill();
       }
 
-      // Flowers
+      // Sparse flowers (reduced from reference — mostly green canopy)
       const flowerSeed = tile.col * 23 + tile.row * 31;
-      const flowerCount = 1 + (flowerSeed % 3);
-      for (let f = 0; f < flowerCount; f++) {
-        const fx = tx + ((flowerSeed + f * 29) % Math.round(ts * 0.4)) - ts * 0.2;
-        const fy = ty + ((flowerSeed + f * 37) % Math.round(ts * 0.4)) - ts * 0.2;
-        ctx.fillStyle = f % 2 === 0 ? COLORS.flowerRed : COLORS.flowerYellow;
+      if (flowerSeed % 4 === 0) { // only 1 in 4 tiles get a flower
+        const fx = tx + ((flowerSeed + 29) % Math.round(ts * 0.3)) - ts * 0.15;
+        const fy = ty + ((flowerSeed + 37) % Math.round(ts * 0.3)) - ts * 0.15;
+        ctx.fillStyle = COLORS.flowerRed;
         ctx.beginPath();
-        ctx.arc(fx, fy, Math.max(1, ts * 0.018), 0, Math.PI * 2);
+        ctx.arc(fx, fy, Math.max(1, ts * 0.014), 0, Math.PI * 2);
         ctx.fill();
       }
     }
@@ -461,8 +465,8 @@ function drawStaticLayer(ctx, canvas, gameState, layout) {
   const boardW = totalCols * ts;
   const boardH = totalRows * ts;
 
-  // Background
-  ctx.fillStyle = '#0a1e2a';
+  // Background — dark moody navy
+  ctx.fillStyle = '#050e18';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   // Grid labels
@@ -539,14 +543,6 @@ function drawStaticLayer(ctx, canvas, gameState, layout) {
           drawSeaTile(ctx, x, y, c, r, ts, islandSet, depthMap);
       }
 
-      // Subtle grid lines — only on water, very faint dashed
-      if (tile.type === 'sea') {
-        ctx.strokeStyle = 'rgba(100, 150, 180, 0.04)';
-        ctx.lineWidth = 0.3;
-        ctx.setLineDash([ts * 0.12, ts * 0.18]);
-        ctx.strokeRect(x, y, ts, ts);
-        ctx.setLineDash([]);
-      }
     }
   }
 
@@ -567,6 +563,24 @@ function drawStaticLayer(ctx, canvas, gameState, layout) {
 
   // Wall barriers between tiles
   drawWalls(ctx, gameState, ts, gp);
+
+  // Grid lines — drawn AFTER islands, visible across all tiles
+  ctx.strokeStyle = COLORS.gridLine;
+  ctx.lineWidth = 0.7;
+  for (let r = 0; r <= totalRows; r++) {
+    const ly = gp + r * ts;
+    ctx.beginPath();
+    ctx.moveTo(gp, ly);
+    ctx.lineTo(gp + totalCols * ts, ly);
+    ctx.stroke();
+  }
+  for (let c = 0; c <= totalCols; c++) {
+    const lx = gp + c * ts;
+    ctx.beginPath();
+    ctx.moveTo(lx, gp);
+    ctx.lineTo(lx, gp + totalRows * ts);
+    ctx.stroke();
+  }
 
   // Island decorations — positioned at tile closest to island center
   for (const [id, island] of Object.entries(islands)) {
@@ -679,47 +693,50 @@ function drawDynamicLayer(ctx, gameState, options, layout) {
 // ── Tile Renderers ─────────────────────────────────────────────
 
 function drawSeaTile(ctx, x, y, col, row, ts, islandSet, depthMap) {
-  // Depth-aware base: smooth gradient from shallow to deep
+  // Depth-aware base: dark moody ocean with bright shallows near islands
   const dist = depthMap ? depthMap[row]?.[col] ?? 4 : 4;
 
   let base;
   if (dist <= 1) {
-    base = '#1f6a8a'; // shallow — bright blue-green
+    base = '#14586a'; // shallow — teal near islands
   } else if (dist === 2) {
-    base = '#1a5878'; // medium shallow
-  } else if (dist === 3) {
-    base = (row + col) % 2 === 0 ? '#184d6e' : '#164563';
+    base = '#0b3040'; // gentle transition
   } else {
-    base = (row + col) % 2 === 0 ? COLORS.sea1 : COLORS.sea2;
+    base = '#092a3a'; // deep ocean — uniform dark
   }
   ctx.fillStyle = base;
   ctx.fillRect(x, y, ts, ts);
 
-  // Depth gradient overlay — darker in deep water
-  if (dist >= 3) {
-    const grad = ctx.createRadialGradient(x + ts * 0.4, y + ts * 0.4, 0, x + ts / 2, y + ts / 2, ts * 0.9);
-    grad.addColorStop(0, 'rgba(15, 45, 69, 0.15)');
-    grad.addColorStop(1, 'transparent');
-    ctx.fillStyle = grad;
+  // Very subtle per-tile noise for painterly texture (not visible as checkerboard)
+  const noiseSeed = col * 31 + row * 47;
+  const noiseVal = ((noiseSeed * 13 + 7) % 20) - 10;
+  if (noiseVal > 5) {
+    ctx.fillStyle = 'rgba(15, 50, 75, 0.04)';
     ctx.fillRect(x, y, ts, ts);
-  } else if (dist <= 1) {
-    // Bright shallow shimmer
-    const grad = ctx.createRadialGradient(x + ts / 2, y + ts / 2, ts * 0.1, x + ts / 2, y + ts / 2, ts * 0.7);
-    grad.addColorStop(0, 'rgba(40, 130, 170, 0.10)');
+  } else if (noiseVal < -5) {
+    ctx.fillStyle = 'rgba(5, 15, 25, 0.05)';
+    ctx.fillRect(x, y, ts, ts);
+  }
+
+  // Shallow water turquoise shimmer
+  if (dist <= 1) {
+    const grad = ctx.createRadialGradient(x + ts / 2, y + ts / 2, ts * 0.05, x + ts / 2, y + ts / 2, ts * 0.8);
+    grad.addColorStop(0, 'rgba(40, 180, 210, 0.15)');
+    grad.addColorStop(0.6, 'rgba(30, 140, 170, 0.08)');
     grad.addColorStop(1, 'transparent');
     ctx.fillStyle = grad;
     ctx.fillRect(x, y, ts, ts);
   }
 
-  // Wave lines (5 per tile with varied amplitude)
+  // Wave lines (6 per tile with varied amplitude, more visible)
   const seed = (col * 7 + row * 13) % 17;
-  const waveAlphaScale = dist <= 1 ? 0.6 : 1.0; // softer waves near shore
-  for (let i = 0; i < 5; i++) {
-    const waveOpacity = (0.05 + (i % 3) * 0.02) * waveAlphaScale;
-    ctx.strokeStyle = `rgba(100, 180, 220, ${waveOpacity})`;
-    ctx.lineWidth = 0.8 + (i % 2) * 0.4;
-    const waveY = y + ts * 0.08 + i * ts * 0.18 + ((seed + i * 3) % 7);
-    const amp = ts * 0.025 + (i % 3) * ts * 0.015;
+  const waveAlphaScale = dist <= 1 ? 0.7 : 1.0;
+  for (let i = 0; i < 6; i++) {
+    const waveOpacity = (0.06 + (i % 3) * 0.03) * waveAlphaScale;
+    ctx.strokeStyle = `rgba(120, 200, 235, ${waveOpacity})`;
+    ctx.lineWidth = 0.8 + (i % 2) * 0.5;
+    const waveY = y + ts * 0.06 + i * ts * 0.155 + ((seed + i * 3) % 7);
+    const amp = ts * 0.03 + (i % 3) * ts * 0.018;
     ctx.beginPath();
     ctx.moveTo(x, waveY);
     ctx.quadraticCurveTo(x + ts * 0.25, waveY - amp, x + ts * 0.5, waveY + ((seed + i) % 3) * 0.5);
@@ -727,14 +744,32 @@ function drawSeaTile(ctx, x, y, col, row, ts, islandSet, depthMap) {
     ctx.stroke();
   }
 
+  // Foam/spray patches — white splotches for rough sea texture
+  const foamCount = 1 + (seed % 2);
+  for (let i = 0; i < foamCount; i++) {
+    const fx = x + ((seed * 11 + i * 41) % Math.round(ts * 0.6)) + ts * 0.2;
+    const fy = y + ((seed * 19 + i * 37) % Math.round(ts * 0.6)) + ts * 0.2;
+    const fr = ts * 0.025 + ((seed + i * 7) % 4) * ts * 0.008;
+    const foamAlpha = dist <= 2 ? 0.12 : 0.06;
+    ctx.fillStyle = `rgba(200, 230, 250, ${foamAlpha})`;
+    ctx.beginPath();
+    ctx.arc(fx, fy, fr, 0, Math.PI * 2);
+    ctx.fill();
+    // secondary smaller foam dot nearby
+    ctx.fillStyle = `rgba(220, 240, 255, ${foamAlpha * 0.7})`;
+    ctx.beginPath();
+    ctx.arc(fx + ts * 0.03, fy - ts * 0.02, fr * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   // Caustic light spots (2-3 per tile, brighter in shallow water)
   const causticCount = 2 + (seed % 2);
-  const causticAlpha = dist <= 2 ? 0.08 : 0.06;
+  const causticAlpha = dist <= 2 ? 0.10 : 0.06;
   for (let i = 0; i < causticCount; i++) {
     const cx = x + ((seed * 11 + i * 31) % Math.round(ts * 0.7)) + ts * 0.15;
     const cy = y + ((seed * 17 + i * 23) % Math.round(ts * 0.7)) + ts * 0.15;
     const cr = ts * 0.03 + (i % 2) * ts * 0.02;
-    ctx.fillStyle = `rgba(80, 200, 240, ${causticAlpha})`;
+    ctx.fillStyle = `rgba(60, 190, 230, ${causticAlpha})`;
     ctx.beginPath();
     ctx.arc(cx, cy, cr, 0, Math.PI * 2);
     ctx.fill();
@@ -876,8 +911,8 @@ function drawHarborCove(ctx, island, ts, gp, board) {
   ctx.restore();
 
   // ── Step 3: Layered depth fills for natural tidal pool look ──
-  // Shallow outer ring — lighter teal, gives impression of sandy shallow water
-  ctx.fillStyle = 'rgba(60, 150, 160, 0.30)';
+  // Shallow outer ring — turquoise tint matching shallow water ring
+  ctx.fillStyle = 'rgba(30, 130, 150, 0.30)';
   ctx.fill(harborPath);
 
   // Mid-depth ring (inset further from blocked sides)
@@ -892,7 +927,7 @@ function drawHarborCove(ctx, island, ts, gp, board) {
   ctx.fillStyle = COLORS.portWater;
   ctx.fill(midPath);
 
-  // Inner deeper water
+  // Inner deeper water — darker to match deep ocean
   const deepInset = ts * 0.13;
   const innerPath = _buildOrganicHarborPath(
     eL + (blockedSides.includes('W') ? deepInset : midInset * 0.5),
@@ -901,7 +936,7 @@ function drawHarborCove(ctx, island, ts, gp, board) {
     eB - (blockedSides.includes('S') ? deepInset : midInset * 0.5),
     blockedSides, ts, seed + 13
   );
-  ctx.fillStyle = 'rgba(25, 75, 110, 0.40)';
+  ctx.fillStyle = 'rgba(10, 50, 75, 0.45)';
   ctx.fill(innerPath);
 
   // Deep center radial gradient — darkest at center
@@ -909,9 +944,9 @@ function drawHarborCove(ctx, island, ts, gp, board) {
   const deepR = Math.min(iR - iL, iB - iT) * 0.35;
   if (deepR > 3) {
     const deepGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, deepR);
-    deepGrad.addColorStop(0, 'rgba(10, 45, 70, 0.35)');
-    deepGrad.addColorStop(0.6, 'rgba(15, 55, 80, 0.15)');
-    deepGrad.addColorStop(1, 'rgba(15, 55, 80, 0)');
+    deepGrad.addColorStop(0, 'rgba(5, 25, 40, 0.40)');
+    deepGrad.addColorStop(0.6, 'rgba(8, 35, 55, 0.18)');
+    deepGrad.addColorStop(1, 'rgba(8, 35, 55, 0)');
     ctx.fillStyle = deepGrad;
     ctx.fill(harborPath);
   }
@@ -923,8 +958,8 @@ function drawHarborCove(ctx, island, ts, gp, board) {
     const foamSeed = seed + side.charCodeAt(0);
 
     // Outer foam line — white frothy edge where water meets sand
-    ctx.strokeStyle = 'rgba(220, 235, 245, 0.30)';
-    ctx.lineWidth = Math.max(1.5, ts * 0.035);
+    ctx.strokeStyle = 'rgba(220, 240, 255, 0.38)';
+    ctx.lineWidth = Math.max(1.5, ts * 0.04);
     ctx.beginPath();
     if (side === 'N') {
       _wobbleLine(ctx, iL, iT + ts * 0.015, iR, iT + ts * 0.015, foamSeed, ts * 0.03);
@@ -1277,7 +1312,7 @@ function drawRockTile(ctx, x, y, col, row, ts, islandSet, tile) {
   const isBorder = tile?.isBorderObstacle;
 
   // Sea base underneath (so rock floats on water)
-  const seaBase = (row + col) % 2 === 0 ? COLORS.sea1 : COLORS.seaShallow;
+  const seaBase = (row + col) % 2 === 0 ? COLORS.sea1 : COLORS.sea2;
   ctx.fillStyle = seaBase;
   ctx.fillRect(x, y, ts, ts);
 
@@ -1378,9 +1413,9 @@ function drawRockTile(ctx, x, y, col, row, ts, islandSet, tile) {
 }
 
 function drawLandBarrier(ctx, x, y, ts) {
-  ctx.fillStyle = '#3a3a2a';
+  ctx.fillStyle = '#1a1a14';
   ctx.fillRect(x, y, ts, ts);
-  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
   ctx.lineWidth = 1;
   const step = Math.max(4, Math.round(ts * 0.1));
   for (let i = 0; i < ts * 2; i += step) {
@@ -1904,34 +1939,35 @@ function drawCompassRose(ctx, cx, cy, size) {
 
 function drawBoardEdge(ctx, canvasW, canvasH, gp, boardW, boardH) {
   const edgeSize = Math.round(gp * 0.8);
+  const edgeColor = 'rgba(5, 14, 24, 0.90)';
 
   // Top
   let g = ctx.createLinearGradient(0, 0, 0, edgeSize);
-  g.addColorStop(0, 'rgba(10, 30, 42, 0.85)');
+  g.addColorStop(0, edgeColor);
   g.addColorStop(1, 'transparent');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, canvasW, edgeSize);
   // Bottom
   g = ctx.createLinearGradient(0, canvasH, 0, canvasH - edgeSize);
-  g.addColorStop(0, 'rgba(10, 30, 42, 0.85)');
+  g.addColorStop(0, edgeColor);
   g.addColorStop(1, 'transparent');
   ctx.fillStyle = g;
   ctx.fillRect(0, canvasH - edgeSize, canvasW, edgeSize);
   // Left
   g = ctx.createLinearGradient(0, 0, edgeSize, 0);
-  g.addColorStop(0, 'rgba(10, 30, 42, 0.85)');
+  g.addColorStop(0, edgeColor);
   g.addColorStop(1, 'transparent');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, edgeSize, canvasH);
   // Right
   g = ctx.createLinearGradient(canvasW, 0, canvasW - edgeSize, 0);
-  g.addColorStop(0, 'rgba(10, 30, 42, 0.85)');
+  g.addColorStop(0, edgeColor);
   g.addColorStop(1, 'transparent');
   ctx.fillStyle = g;
   ctx.fillRect(canvasW - edgeSize, 0, edgeSize, canvasH);
 
-  // Inner gold border at board boundary
-  ctx.strokeStyle = 'rgba(200, 170, 100, 0.12)';
+  // Inner subtle border at board boundary
+  ctx.strokeStyle = 'rgba(180, 160, 100, 0.10)';
   ctx.lineWidth = 1;
   ctx.strokeRect(gp - 1, gp - 1, boardW + 2, boardH + 2);
 }

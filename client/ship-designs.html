@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html><head><title>Ship Design — Side Badges</title>
+<style>
+  body { background: #092a3a; color: #fff; font-family: sans-serif; margin: 20px; }
+  h1 { text-align: center; color: #e8cc88; font-size: 28px; }
+  h2 { color: #ffd700; margin: 20px 0 8px; font-size: 20px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .label { color: #ccc; font-size: 12px; text-align: center; margin-top: 2px; }
+  canvas { border: 1px solid #1a3a4a; border-radius: 4px; }
+</style>
+</head><body>
+<h1>Ship Design — Side Badges</h1>
+<p style="text-align:center;color:#aaa;">Sail badges on left, cannon badges on right, segmented health bar below</p>
+
+<div id="designs"></div>
+
+<script>
+const COLORS = {
+  red: '#ef4444', blue: '#3b82f6', green: '#22c55e',
+  yellow: '#eab308', purple: '#a855f7', orange: '#f97316',
+};
+const colorNames = ['red','blue','green','yellow','purple','orange'];
+
+function darken(hex, amt) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = Math.max(0, (n >> 16) - Math.round(255 * amt));
+  const g = Math.max(0, ((n >> 8) & 0xff) - Math.round(255 * amt));
+  const b = Math.max(0, (n & 0xff) - Math.round(255 * amt));
+  return 'rgb('+r+','+g+','+b+')';
+}
+
+function drawShip(ctx, cx, cy, ts, shipColor, ship) {
+  const hullHW = ts * 0.24;
+  const bowY = cy - ts * 0.30;
+  const sternY = cy + ts * 0.24;
+
+  // ── Hull (slightly narrower to make room for badges) ──
+  ctx.fillStyle = shipColor;
+  ctx.beginPath();
+  ctx.moveTo(cx, bowY);
+  ctx.quadraticCurveTo(cx + hullHW * 0.5, bowY + ts * 0.1, cx + hullHW, cy + ts * 0.04);
+  ctx.lineTo(cx + hullHW * 0.85, sternY);
+  ctx.quadraticCurveTo(cx, sternY + ts * 0.06, cx - hullHW * 0.85, sternY);
+  ctx.lineTo(cx - hullHW, cy + ts * 0.04);
+  ctx.quadraticCurveTo(cx - hullHW * 0.5, bowY + ts * 0.1, cx, bowY);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+  ctx.lineWidth = Math.max(1.5, ts * 0.025);
+  ctx.stroke();
+
+  // Deck inset
+  ctx.fillStyle = darken(shipColor, 0.14);
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, hullHW * 0.55, ts * 0.14, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Small mast detail on hull
+  ctx.strokeStyle = '#b0a070';
+  ctx.lineWidth = Math.max(1.2, ts * 0.018);
+  ctx.beginPath();
+  ctx.moveTo(cx, cy + ts * 0.08);
+  ctx.lineTo(cx, cy - ts * 0.16);
+  ctx.stroke();
+
+  // ── Sail badges (LEFT side) — up to tile edge, slight hull overlap ──
+  const badgeR = ts * 0.19;
+  const badgeLX = cx - hullHW - badgeR * 0.4;
+  for (let m = 0; m < 2; m++) {
+    const by = cy - ts * 0.12 + m * (badgeR * 2.2);
+    if (m < ship.masts) {
+      // Filled badge — dark circle with white sail icon
+      ctx.fillStyle = 'rgba(0,0,0,0.65)';
+      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.arc(badgeLX, by, badgeR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      // Sail icon — large, fills badge
+      const iconS = badgeR * 0.88;
+      ctx.strokeStyle = '#c8b880';
+      ctx.lineWidth = Math.max(1.8, ts * 0.026);
+      ctx.beginPath();
+      ctx.moveTo(badgeLX - iconS * 0.18, by + iconS * 0.7);
+      ctx.lineTo(badgeLX - iconS * 0.18, by - iconS * 0.8);
+      ctx.stroke();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.moveTo(badgeLX - iconS * 0.18, by - iconS * 0.7);
+      ctx.lineTo(badgeLX + iconS * 0.8, by + iconS * 0.15);
+      ctx.lineTo(badgeLX - iconS * 0.18, by + iconS * 0.55);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  // ── Cannon badges (RIGHT side) — up to tile edge, slight hull overlap ──
+  const badgeRX = cx + hullHW + badgeR * 0.4;
+  for (let c = 0; c < 2; c++) {
+    const by = cy - ts * 0.12 + c * (badgeR * 2.2);
+    if (c < ship.cannons) {
+      // Filled badge — dark circle with cannon icon
+      ctx.fillStyle = 'rgba(0,0,0,0.65)';
+      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.arc(badgeRX, by, badgeR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      // Cannon icon — large, fills badge
+      const iconS = badgeR * 0.8;
+      // Cannonball
+      ctx.fillStyle = '#999';
+      ctx.beginPath();
+      ctx.arc(badgeRX + iconS * 0.05, by + iconS * 0.18, iconS * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+      // Barrel
+      ctx.fillStyle = '#666';
+      ctx.save();
+      ctx.translate(badgeRX, by);
+      ctx.rotate(-Math.PI * 0.3);
+      ctx.fillRect(-iconS * 0.26, -iconS * 1.05, iconS * 0.52, iconS * 0.95);
+      ctx.restore();
+      // Fuse spark
+      ctx.fillStyle = '#ffcc33';
+      ctx.beginPath();
+      ctx.arc(badgeRX - iconS * 0.35, by - iconS * 0.7, iconS * 0.22, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // ── Health bar below ship (segmented into 3) ──
+  const barY = sternY + ts * 0.10;
+  const barW = ts * 0.50;
+  const barH = ts * 0.07;
+  const barX = cx - barW / 2;
+  const segW = barW / 3;
+  const segGap = 1.5;
+  const bR = ts * 0.02;
+
+  // Background
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.beginPath();
+  ctx.moveTo(barX + bR, barY);
+  ctx.arcTo(barX + barW, barY, barX + barW, barY + barH, bR);
+  ctx.arcTo(barX + barW, barY + barH, barX, barY + barH, bR);
+  ctx.arcTo(barX, barY + barH, barX, barY, bR);
+  ctx.arcTo(barX, barY, barX + barW, barY, bR);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+
+  // Filled segments
+  for (let s = 0; s < 3; s++) {
+    const sx = barX + s * segW + segGap;
+    const sw = segW - segGap * 2;
+    if (s < ship.lifePegs) {
+      let segColor;
+      if (ship.lifePegs === 3) segColor = '#22cc44';
+      else if (ship.lifePegs === 2) segColor = '#ddaa00';
+      else segColor = '#ee3333';
+      ctx.fillStyle = segColor;
+      ctx.fillRect(sx, barY + segGap, sw, barH - segGap * 2);
+    }
+  }
+
+  // Dividers
+  for (let d = 1; d < 3; d++) {
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(barX + d * segW, barY + 1);
+    ctx.lineTo(barX + d * segW, barY + barH - 1);
+    ctx.stroke();
+  }
+}
+
+// ── Render ──
+const container = document.getElementById('designs');
+const ts = 90;
+
+const shipStates = [
+  { masts: 2, cannons: 2, lifePegs: 3, label: 'Full: 2 sails, 2 cannons, 3 HP' },
+  { masts: 1, cannons: 1, lifePegs: 2, label: 'Mid: 1 sail, 1 cannon, 2 HP' },
+  { masts: 0, cannons: 0, lifePegs: 1, label: 'Bare: 0 sails, 0 cannons, 1 HP' },
+];
+
+for (const state of shipStates) {
+  const h2 = document.createElement('h2');
+  h2.textContent = state.label;
+  container.appendChild(h2);
+
+  const row = document.createElement('div');
+  row.className = 'row';
+  container.appendChild(row);
+
+  for (const colorName of colorNames) {
+    const wrap = document.createElement('div');
+    const canvas = document.createElement('canvas');
+    canvas.width = ts + 60;
+    canvas.height = ts + 40;
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = '#092a3a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = 0.7;
+    ctx.strokeRect(30, 12, ts, ts);
+
+    drawShip(ctx, ts/2 + 30, ts/2 + 12, ts, COLORS[colorName], state);
+
+    const label = document.createElement('div');
+    label.className = 'label';
+    label.textContent = colorName;
+
+    wrap.appendChild(canvas);
+    wrap.appendChild(label);
+    row.appendChild(wrap);
+  }
+}
+</script>
+</body></html>
