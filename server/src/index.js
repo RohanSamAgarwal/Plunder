@@ -4,7 +4,6 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { appendFile } from 'fs';
 import cors from 'cors';
 import { EVENTS, GAME_PHASES, TURN_PHASES, TRADE_KNOWLEDGE } from '../../shared/constants.js';
 import {
@@ -59,23 +58,47 @@ app.get('/api/room/:code', (req, res) => {
   res.json(getPublicRoomState(room));
 });
 
-// Bug report endpoint
-app.post('/api/bugs', (req, res) => {
+// Bug report endpoint — creates a GitHub Issue
+app.post('/api/bugs', async (req, res) => {
   const { description } = req.body;
   if (!description || typeof description !== 'string' || !description.trim()) {
     return res.status(400).json({ error: 'Description is required' });
   }
-  const timestamp = new Date().toISOString();
-  const entry = `[${timestamp}]\n${description.trim()}\n${'─'.repeat(60)}\n\n`;
-  const filePath = join(__dirname, '../../bug-reports.txt');
-  appendFile(filePath, entry, (err) => {
-    if (err) {
-      console.error('Failed to write bug report:', err);
-      return res.status(500).json({ error: 'Failed to save bug report' });
+
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) {
+    console.error('GITHUB_TOKEN not set — cannot create issue');
+    return res.status(500).json({ error: 'Bug reporting is not configured' });
+  }
+
+  const trimmed = description.trim();
+  const title = trimmed.length > 80 ? trimmed.slice(0, 77) + '...' : trimmed;
+  const body = `${trimmed}\n\n---\n*Submitted via in-game bug report on ${new Date().toISOString()}*`;
+
+  try {
+    const ghRes = await fetch('https://api.github.com/repos/RohanSamAgarwal/Plunder/issues', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.github+json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ title, body, labels: ['bug'] }),
+    });
+
+    if (!ghRes.ok) {
+      const err = await ghRes.text();
+      console.error('GitHub API error:', ghRes.status, err);
+      return res.status(500).json({ error: 'Failed to create bug report' });
     }
-    console.log(`Bug report saved at ${timestamp}`);
+
+    const issue = await ghRes.json();
+    console.log(`Bug report created: issue #${issue.number}`);
     res.json({ success: true });
-  });
+  } catch (err) {
+    console.error('Failed to create GitHub issue:', err);
+    res.status(500).json({ error: 'Failed to create bug report' });
+  }
 });
 
 // === SOCKET.IO HANDLERS ===
@@ -910,7 +933,30 @@ app.get('*', (req, res) => {
   res.sendFile(join(clientBuildPath, 'index.html'));
 });
 
+// Ensure 'bug' label exists in the GitHub repo
+async function ensureBugLabel() {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) return;
+  try {
+    const res = await fetch('https://api.github.com/repos/RohanSamAgarwal/Plunder/labels', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.github+json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ name: 'bug', color: 'd73a4a', description: 'In-game bug report' }),
+    });
+    if (res.ok) console.log('Created "bug" label');
+    else if (res.status === 422) console.log('"bug" label already exists');
+    else console.warn('Could not create bug label:', res.status);
+  } catch (err) {
+    console.warn('Failed to ensure bug label:', err.message);
+  }
+}
+
 const PORT = process.env.PORT || 3001;
 httpServer.listen(PORT, () => {
   console.log(`Plunder server running on port ${PORT}`);
+  ensureBugLabel();
 });
