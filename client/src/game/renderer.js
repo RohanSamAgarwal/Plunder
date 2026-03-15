@@ -1666,83 +1666,148 @@ function drawShip(ctx, ship, color, isSelected, ts, gp) {
     ctx.shadowBlur = ts * 0.2;
   }
 
-  // ── Hull (top-down ship shape) ──
-  const hullHW = ts * 0.28; // half-width
-  const bowY = cy - ts * 0.34;  // pointed bow tip
-  const sternY = cy + ts * 0.28;
+  // ── Hull (slightly narrower to make room for badges) ──
+  const hullHW = ts * 0.24;
+  const bowY = cy - ts * 0.30;
+  const sternY = cy + ts * 0.24;
 
   ctx.fillStyle = shipColor;
   ctx.beginPath();
-  ctx.moveTo(cx, bowY); // bow point
-  ctx.quadraticCurveTo(cx + hullHW * 0.5, bowY + ts * 0.1, cx + hullHW, cy + ts * 0.04); // starboard bow curve
-  ctx.lineTo(cx + hullHW * 0.85, sternY); // starboard stern
-  ctx.quadraticCurveTo(cx, sternY + ts * 0.06, cx - hullHW * 0.85, sternY); // stern curve
-  ctx.lineTo(cx - hullHW, cy + ts * 0.04); // port stern
-  ctx.quadraticCurveTo(cx - hullHW * 0.5, bowY + ts * 0.1, cx, bowY); // port bow curve
+  ctx.moveTo(cx, bowY);
+  ctx.quadraticCurveTo(cx + hullHW * 0.5, bowY + ts * 0.1, cx + hullHW, cy + ts * 0.04);
+  ctx.lineTo(cx + hullHW * 0.85, sternY);
+  ctx.quadraticCurveTo(cx, sternY + ts * 0.06, cx - hullHW * 0.85, sternY);
+  ctx.lineTo(cx - hullHW, cy + ts * 0.04);
+  ctx.quadraticCurveTo(cx - hullHW * 0.5, bowY + ts * 0.1, cx, bowY);
   ctx.closePath();
   ctx.fill();
-
-  // Hull outline
-  ctx.strokeStyle = 'rgba(0,0,0,0.4)';
-  ctx.lineWidth = Math.max(1, ts * 0.02);
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+  ctx.lineWidth = Math.max(1.5, ts * 0.025);
   ctx.stroke();
 
-  // Deck line (inner)
-  ctx.strokeStyle = darkenColor(shipColor, 0.15);
-  ctx.lineWidth = Math.max(0.8, ts * 0.012);
+  // Deck inset
+  ctx.fillStyle = darkenColor(shipColor, 0.14);
   ctx.beginPath();
-  ctx.ellipse(cx, cy, hullHW * 0.65, ts * 0.2, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx, cy, hullHW * 0.55, ts * 0.14, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Small mast detail on hull
+  ctx.strokeStyle = '#b0a070';
+  ctx.lineWidth = Math.max(1.2, ts * 0.018);
+  ctx.beginPath();
+  ctx.moveTo(cx, cy + ts * 0.08);
+  ctx.lineTo(cx, cy - ts * 0.16);
   ctx.stroke();
 
   if (isSelected) ctx.restore();
 
-  // ── Mast pegs (top area of ship) ──
-  const mastY = cy - ts * 0.15;
+  // ── Sail badges (LEFT side) ──
+  const badgeR = ts * 0.19;
+  const badgeLX = cx - hullHW - badgeR * 0.4;
   for (let m = 0; m < 2; m++) {
-    const mx = cx + (m === 0 ? -ts * 0.05 : ts * 0.05);
-    const my = mastY + m * ts * 0.06;
+    const by = cy - ts * 0.12 + m * (badgeR * 2.2);
     if (m < ship.masts) {
-      // Mast pole
-      ctx.strokeStyle = '#d4c4a0';
-      ctx.lineWidth = Math.max(1, ts * 0.018);
+      ctx.fillStyle = 'rgba(0,0,0,0.65)';
+      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+      ctx.lineWidth = 1.8;
       ctx.beginPath();
-      ctx.moveTo(mx, my);
-      ctx.lineTo(mx, my - ts * 0.15);
+      ctx.arc(badgeLX, by, badgeR, 0, Math.PI * 2);
+      ctx.fill();
       ctx.stroke();
-      // Sail triangle
-      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      // Sail icon
+      const iconS = badgeR * 0.88;
+      ctx.strokeStyle = '#c8b880';
+      ctx.lineWidth = Math.max(1.8, ts * 0.026);
       ctx.beginPath();
-      ctx.moveTo(mx, my - ts * 0.13);
-      ctx.lineTo(mx + ts * 0.08, my - ts * 0.05);
-      ctx.lineTo(mx, my - ts * 0.03);
+      ctx.moveTo(badgeLX - iconS * 0.18, by + iconS * 0.7);
+      ctx.lineTo(badgeLX - iconS * 0.18, by - iconS * 0.8);
+      ctx.stroke();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.moveTo(badgeLX - iconS * 0.18, by - iconS * 0.7);
+      ctx.lineTo(badgeLX + iconS * 0.8, by + iconS * 0.15);
+      ctx.lineTo(badgeLX - iconS * 0.18, by + iconS * 0.55);
       ctx.closePath();
       ctx.fill();
-    } else {
-      // Empty slot
-      ctx.strokeStyle = 'rgba(200,200,200,0.2)';
-      ctx.lineWidth = 0.8;
-      ctx.beginPath();
-      ctx.arc(mx, my - ts * 0.04, ts * 0.02, 0, Math.PI * 2);
-      ctx.stroke();
     }
   }
 
-  // ── Cannon pegs (port/left side) ──
-  const cannonX = cx - hullHW * 0.65;
-  const cannonBaseY = cy + ts * 0.02;
+  // ── Cannon badges (RIGHT side) ──
+  const badgeRX = cx + hullHW + badgeR * 0.4;
   for (let c = 0; c < 2; c++) {
-    const filled = c < ship.cannons;
-    const py = cannonBaseY + c * ts * 0.1;
-    drawPeg(ctx, cannonX, py, ts * 0.032, filled ? '#444' : null, filled ? '#222' : 'rgba(100,100,100,0.25)');
+    const by = cy - ts * 0.12 + c * (badgeR * 2.2);
+    if (c < ship.cannons) {
+      ctx.fillStyle = 'rgba(0,0,0,0.65)';
+      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.arc(badgeRX, by, badgeR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      // Cannon icon
+      const iconS = badgeR * 0.8;
+      ctx.fillStyle = '#999';
+      ctx.beginPath();
+      ctx.arc(badgeRX + iconS * 0.05, by + iconS * 0.18, iconS * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#666';
+      ctx.save();
+      ctx.translate(badgeRX, by);
+      ctx.rotate(-Math.PI * 0.3);
+      ctx.fillRect(-iconS * 0.26, -iconS * 1.05, iconS * 0.52, iconS * 0.95);
+      ctx.restore();
+      ctx.fillStyle = '#ffcc33';
+      ctx.beginPath();
+      ctx.arc(badgeRX - iconS * 0.35, by - iconS * 0.7, iconS * 0.22, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
-  // ── Life pegs (starboard/right side) ──
-  const lifeX = cx + hullHW * 0.65;
-  const lifeBaseY = cy - ts * 0.04;
-  for (let l = 0; l < 3; l++) {
-    const filled = l < ship.lifePegs;
-    const py = lifeBaseY + l * ts * 0.09;
-    drawPeg(ctx, lifeX, py, ts * 0.032, filled ? '#ff4444' : null, filled ? '#cc0000' : 'rgba(255,80,80,0.2)');
+  // ── Health bar below ship (segmented into 3) ──
+  const barY = sternY + ts * 0.10;
+  const barW = ts * 0.50;
+  const barH = ts * 0.07;
+  const barX = cx - barW / 2;
+  const segW = barW / 3;
+  const segGap = 1.5;
+  const bR = ts * 0.02;
+
+  // Background
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.beginPath();
+  ctx.moveTo(barX + bR, barY);
+  ctx.arcTo(barX + barW, barY, barX + barW, barY + barH, bR);
+  ctx.arcTo(barX + barW, barY + barH, barX, barY + barH, bR);
+  ctx.arcTo(barX, barY + barH, barX, barY, bR);
+  ctx.arcTo(barX, barY, barX + barW, barY, bR);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+
+  // Filled segments
+  for (let s = 0; s < 3; s++) {
+    const sx = barX + s * segW + segGap;
+    const sw = segW - segGap * 2;
+    if (s < ship.lifePegs) {
+      let segColor;
+      if (ship.lifePegs === 3) segColor = '#22cc44';
+      else if (ship.lifePegs === 2) segColor = '#ddaa00';
+      else segColor = '#ee3333';
+      ctx.fillStyle = segColor;
+      ctx.fillRect(sx, barY + segGap, sw, barH - segGap * 2);
+    }
+  }
+
+  // Dividers
+  for (let d = 1; d < 3; d++) {
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(barX + d * segW, barY + 1);
+    ctx.lineTo(barX + d * segW, barY + barH - 1);
+    ctx.stroke();
   }
 
   // ── Selection ring ──
