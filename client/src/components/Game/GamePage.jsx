@@ -59,6 +59,7 @@ export default function GamePage() {
   const [drawnCard, setDrawnCard] = useState(null);
   const [deckShuffling, setDeckShuffling] = useState(false);
   const [animations, setAnimations] = useState([]);
+  const [diceRollAnim, setDiceRollAnim] = useState(null);
   const [needsJoin, setNeedsJoin] = useState(false);
   const [joinName, setJoinName] = useState('');
   const [error, setError] = useState('');
@@ -127,8 +128,14 @@ export default function GamePage() {
         setPendingAttackBribe(null);
         setAttackBribeDecision(null);
       }),
-      on(EVENTS.DIE_ROLLED, ({ playerId, roll, stormMoved }) => {
+      on(EVENTS.DIE_ROLLED, ({ playerId, playerName, roll, totalMovePoints, reroll, stormMoved }) => {
         if (stormMoved) addSystemMessage('The storm has moved!');
+        setDiceRollAnim({
+          roll,
+          totalMovePoints,
+          isReroll: !!reroll,
+          playerName: playerName || 'A player',
+        });
       }),
       on(EVENTS.COMBAT_RESULT, (result) => {
         if (result.type === 'island') {
@@ -319,6 +326,8 @@ export default function GamePage() {
       onDismissCard={() => setDrawnCard(null)}
       deckShuffling={deckShuffling}
       animations={animations}
+      diceRollAnim={diceRollAnim}
+      onDiceRollComplete={() => setDiceRollAnim(null)}
       roomCode={code}
     />
   );

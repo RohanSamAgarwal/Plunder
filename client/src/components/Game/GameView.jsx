@@ -3,6 +3,7 @@ import { useSocketContext } from '../../App';
 import { drawBoard, canvasToGrid, getValidMoves, calculateLayout } from '../../game/renderer';
 import ActionPanel from './ActionPanel';
 import ChatLog from './ChatLog';
+import DiceRoll3D from './DiceRoll3D';
 
 const SIDEBAR_W = 400;
 const TOP_BAR_H = 52;
@@ -32,7 +33,7 @@ const RESOURCE_META = {
 };
 const EMPTY_RESOURCES = { wood: 0, iron: 0, rum: 0, gold: 0 };
 
-export default function GameView({ gameState, playerInfo, messages, pendingTrade, pendingTreaty, pendingAttackBribe, attackBribeDecision, drawnCard, onDismissCard, deckShuffling, animations, roomCode }) {
+export default function GameView({ gameState, playerInfo, messages, pendingTrade, pendingTreaty, pendingAttackBribe, attackBribeDecision, drawnCard, onDismissCard, deckShuffling, animations, diceRollAnim, onDiceRollComplete, roomCode }) {
   const { emit } = useSocketContext();
   const canvasRef = useRef(null);
   const boardContainerRef = useRef(null);
@@ -334,7 +335,7 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
   async function handleRollDie() {
     const result = await emit(EVENTS.ROLL_SAILING_DIE, {});
     if (result?.error) notify(result.error);
-    else notify(`Rolled ${result.roll}! (${result.totalMovePoints} total moves)`);
+    // Success: 3D dice animation handles the display via DIE_ROLLED event
   }
 
   async function handleBuild(buildType, targetShipId) {
@@ -848,6 +849,16 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
               onClick={handleCanvasClick}
               onMouseMove={handleCanvasMouseMove}
             />
+            {/* 3D Dice roll overlay */}
+            {diceRollAnim && (
+              <DiceRoll3D
+                roll={diceRollAnim.roll}
+                totalMovePoints={diceRollAnim.totalMovePoints}
+                isReroll={diceRollAnim.isReroll}
+                playerName={diceRollAnim.playerName}
+                onComplete={onDiceRollComplete}
+              />
+            )}
             {/* Animation overlays - positioned relative to rendered canvas size */}
             {animations?.length > 0 && (
               <div className="absolute inset-0 pointer-events-none overflow-visible">

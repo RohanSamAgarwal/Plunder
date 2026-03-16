@@ -91,6 +91,145 @@ body {
   animation: boardPopupCenter 3s ease-in-out forwards;
 }
 
+/* ── 3D Dice Roll Animation ── */
+
+.dice-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 45;
+  pointer-events: none;
+  animation: diceOverlayIn 0.3s ease-out forwards;
+}
+
+.dice-overlay-fadeout {
+  animation: diceOverlayOut 0.5s ease-in forwards;
+}
+
+@keyframes diceOverlayIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes diceOverlayOut {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+.dice-anim-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.dice-scene {
+  width: 90px;
+  height: 90px;
+  perspective: 500px;
+}
+
+.dice-cube {
+  width: 90px;
+  height: 90px;
+  position: relative;
+  transform-style: preserve-3d;
+}
+
+.dice-rolling {
+  animation: diceRoll 0.5s ease-in-out forwards;
+}
+
+.dice-landed {
+  transition: transform 0.15s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@keyframes diceRoll {
+  0%   { transform: rotateX(0deg)   rotateY(0deg)   rotateZ(0deg); }
+  20%  { transform: rotateX(200deg) rotateY(130deg)  rotateZ(60deg); }
+  40%  { transform: rotateX(400deg) rotateY(280deg)  rotateZ(180deg); }
+  60%  { transform: rotateX(520deg) rotateY(400deg)  rotateZ(100deg); }
+  80%  { transform: rotateX(680deg) rotateY(520deg)  rotateZ(280deg); }
+  100% { transform: rotateX(720deg) rotateY(360deg)  rotateZ(360deg); }
+}
+
+.dice-face {
+  position: absolute;
+  width: 90px;
+  height: 90px;
+  border-radius: 12px;
+  background: #f5f0e6;
+  border: 2px solid #8b6914;
+  box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backface-visibility: visible;
+}
+
+.dice-front  { transform: translateZ(45px); }
+.dice-back   { transform: rotateY(180deg) translateZ(45px); }
+.dice-right  { transform: rotateY(90deg)  translateZ(45px); }
+.dice-left   { transform: rotateY(-90deg) translateZ(45px); }
+.dice-top    { transform: rotateX(90deg)  translateZ(45px); }
+.dice-bottom { transform: rotateX(-90deg) translateZ(45px); }
+
+.dice-pips {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  width: 60px;
+  height: 60px;
+  padding: 4px;
+}
+
+.dice-pip {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #3d2b1f;
+  align-self: center;
+  justify-self: center;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* Reroll gold glow */
+.dice-reroll .dice-face {
+  box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.15), 0 0 18px rgba(255, 215, 0, 0.6);
+  border-color: #d4a017;
+}
+
+/* Result text */
+.dice-result-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+.dice-result-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.dice-roll-value {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #d4a017;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+}
+
+.dice-move-points {
+  font-size: 0.85rem;
+  color: #c8b888;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+}
+
 /* Player color indicators */
 .player-color-red { color: #ef4444; }
 .player-color-blue { color: #3b82f6; }

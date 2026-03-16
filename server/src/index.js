@@ -297,6 +297,7 @@ io.on('connection', (socket) => {
 
     io.to(found.room.code).emit(EVENTS.DIE_ROLLED, {
       playerId: found.player.id,
+      playerName: found.player.name,
       ...result,
     });
   });
@@ -491,6 +492,7 @@ io.on('connection', (socket) => {
 
     io.to(found.room.code).emit(EVENTS.DIE_ROLLED, {
       playerId: found.player.id,
+      playerName: found.player.name,
       reroll: true,
       ...result,
     });
