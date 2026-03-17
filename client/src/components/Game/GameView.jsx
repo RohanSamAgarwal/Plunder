@@ -192,15 +192,24 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
   }, [gameState?.totalRows, zoomedLayout]);
 
   // Redraw board whenever state changes
+  // Uses animation loop when ship selected or tile hovered for pulse effects
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !gameState) return;
     const ctx = canvas.getContext('2d');
-    drawBoard(ctx, canvas, gameState, {
-      selectedShip,
-      hoveredTile,
-      validMoves,
+
+    const draw = () => drawBoard(ctx, canvas, gameState, {
+      selectedShip, hoveredTile, validMoves,
     }, zoomedLayout);
+
+    draw();
+
+    if (selectedShip || hoveredTile) {
+      let raf;
+      const loop = () => { draw(); raf = requestAnimationFrame(loop); };
+      raf = requestAnimationFrame(loop);
+      return () => cancelAnimationFrame(raf);
+    }
   }, [gameState, selectedShip, hoveredTile, validMoves, zoomedLayout]);
 
   // Update valid moves when ship selected

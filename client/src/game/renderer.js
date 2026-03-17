@@ -643,8 +643,26 @@ function drawDynamicLayer(ctx, gameState, options, layout) {
   if (hoveredTile) {
     const x = gp + hoveredTile.col * ts;
     const y = gp + hoveredTile.row * ts;
-    ctx.fillStyle = COLORS.highlight;
-    ctx.fillRect(x, y, ts, ts);
+    // Pulsing highlight with rounded corners
+    const pulse = 0.25 + 0.1 * Math.sin(Date.now() * 0.004);
+    ctx.fillStyle = `rgba(255, 215, 0, ${pulse})`;
+    const r = ts * 0.08;
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + ts - r, y);
+    ctx.quadraticCurveTo(x + ts, y, x + ts, y + r);
+    ctx.lineTo(x + ts, y + ts - r);
+    ctx.quadraticCurveTo(x + ts, y + ts, x + ts - r, y + ts);
+    ctx.lineTo(x + r, y + ts);
+    ctx.quadraticCurveTo(x, y + ts, x, y + ts - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+    ctx.fill();
+    // Border
+    ctx.strokeStyle = `rgba(255, 215, 0, ${pulse + 0.15})`;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
   }
 
   // Storm
@@ -1659,11 +1677,12 @@ function drawShip(ctx, ship, color, isSelected, ts, gp) {
   const cy = y + ts / 2;
   const shipColor = SHIP_COLORS[color] || '#fff';
 
-  // Selection glow
+  // Selection glow (pulsing)
   if (isSelected) {
     ctx.save();
-    ctx.shadowColor = '#ffd700';
-    ctx.shadowBlur = ts * 0.2;
+    const glowPulse = 0.15 + 0.1 * Math.sin(Date.now() * 0.005);
+    ctx.shadowColor = `rgba(255, 215, 0, ${0.8 + glowPulse})`;
+    ctx.shadowBlur = ts * (0.2 + glowPulse);
   }
 
   // ── Hull (slightly narrower to make room for badges) ──
