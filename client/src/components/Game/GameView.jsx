@@ -6,6 +6,7 @@ import ChatLog from './ChatLog';
 import DiceRoll3D from './DiceRoll3D';
 import CombatAnimation from './CombatAnimation';
 import BuildAnimation from './BuildAnimation';
+import ShipLaunchAnimation from './ShipLaunchAnimation';
 import { useAnimSpeed } from '../../App';
 
 const SIDEBAR_W = 400;
@@ -36,7 +37,7 @@ const RESOURCE_META = {
 };
 const EMPTY_RESOURCES = { wood: 0, iron: 0, rum: 0, gold: 0 };
 
-export default function GameView({ gameState, playerInfo, messages, pendingTrade, pendingTreaty, pendingAttackBribe, attackBribeDecision, drawnCard, onDismissCard, deckShuffling, animations, diceRollAnim, onDiceRollComplete, combatAnim, onCombatComplete, buildAnim, onBuildComplete, roomCode }) {
+export default function GameView({ gameState, playerInfo, messages, pendingTrade, pendingTreaty, pendingAttackBribe, attackBribeDecision, drawnCard, onDismissCard, deckShuffling, animations, diceRollAnim, onDiceRollComplete, combatAnim, onCombatComplete, buildAnim, onBuildComplete, shipLaunchAnim, onShipLaunchComplete, roomCode }) {
   const { emit } = useSocketContext();
   const { animSpeed, setAnimSpeed } = useAnimSpeed();
   const canvasRef = useRef(null);
@@ -887,6 +888,26 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
                     buildType={buildAnim.buildType}
                     playerName={buildAnim.playerName}
                     onComplete={onBuildComplete}
+                  />
+                </div>
+              );
+            })()}
+            {/* Ship launch splash overlay */}
+            {shipLaunchAnim && (() => {
+              const loc = shipLaunchAnim.location;
+              const hasPos = loc?.col != null && loc?.row != null;
+              const style = hasPos
+                ? {
+                    left: `${((zoomedLayout.gridPad + loc.col * zoomedLayout.tileSize + zoomedLayout.tileSize / 2) / canvasW) * 100}%`,
+                    top: `${((zoomedLayout.gridPad + loc.row * zoomedLayout.tileSize) / canvasH) * 100}%`,
+                    transform: 'translate(-50%, -50%)',
+                  }
+                : { left: '50%', top: '50%', transform: 'translate(-50%, -50%)' };
+              return (
+                <div className="absolute pointer-events-none" style={style}>
+                  <ShipLaunchAnimation
+                    playerName={shipLaunchAnim.playerName}
+                    onComplete={onShipLaunchComplete}
                   />
                 </div>
               );

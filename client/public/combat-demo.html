@@ -281,6 +281,94 @@
       text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
       white-space: nowrap;
     }
+    /* ── Ship launch animation ── */
+    .ship-launch {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      pointer-events: none;
+    }
+    .ship-launch-ship {
+      font-size: 2.5rem;
+      filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.6));
+      transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease;
+    }
+    .ship-launch-drop .ship-launch-ship {
+      transform: translateY(-40px) scale(0.4);
+      opacity: 0;
+    }
+    .ship-launch-splash .ship-launch-ship {
+      transform: translateY(0) scale(1.1);
+      opacity: 1;
+    }
+    .ship-launch-hold .ship-launch-ship {
+      transform: translateY(0) scale(1);
+      opacity: 1;
+    }
+    .ship-launch-fadeout .ship-launch-ship {
+      transform: translateY(0) scale(1);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    .ship-launch-ripple {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      opacity: 0;
+      transform: scale(0.3);
+      transition: opacity 0.2s ease, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .ship-launch-drop .ship-launch-ripple { opacity: 0; transform: scale(0.3); }
+    .ship-launch-splash .ship-launch-ripple,
+    .ship-launch-hold .ship-launch-ripple { opacity: 1; transform: scale(1); }
+    .ship-launch-wave {
+      font-size: 1.4rem;
+      color: #6bb5ff;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+      animation: shipWaveRipple 0.6s ease-out;
+    }
+    .ship-launch-wave-l { animation-delay: 0s; }
+    .ship-launch-wave-r { animation-delay: 0.1s; }
+    .ship-launch-droplet {
+      font-size: 1.2rem;
+      animation: shipSplashUp 0.5s ease-out;
+    }
+    @keyframes shipWaveRipple {
+      0% { transform: scaleX(0.3); opacity: 0; }
+      50% { transform: scaleX(1.3); opacity: 1; }
+      100% { transform: scaleX(1); opacity: 0.7; }
+    }
+    @keyframes shipSplashUp {
+      0% { transform: translateY(0) scale(0.5); opacity: 0; }
+      40% { transform: translateY(-12px) scale(1.2); opacity: 1; }
+      100% { transform: translateY(-4px) scale(1); opacity: 0.8; }
+    }
+    .ship-launch-label {
+      font-family: 'Pirata One', Georgia, serif;
+      font-size: 0.75rem;
+      color: #c8b888;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+      white-space: nowrap;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .ship-launch-splash .ship-launch-label,
+    .ship-launch-hold .ship-launch-label { opacity: 1; }
+    .ship-launch-fadeout .ship-launch-label { opacity: 0; }
+    .ship-launch-text {
+      font-family: 'Pirata One', Georgia, serif;
+      font-size: 1.1rem;
+      color: #d4a017;
+      text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
+      white-space: nowrap;
+      opacity: 0;
+      transform: translateY(4px);
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+    .ship-launch-splash .ship-launch-text,
+    .ship-launch-hold .ship-launch-text { opacity: 1; transform: translateY(0); }
+    .ship-launch-fadeout .ship-launch-text { opacity: 0; }
   </style>
 </head>
 <body>
@@ -299,6 +387,12 @@
     <button onclick="runBuild('cannon')">Build Cannon</button>
     <button onclick="runBuild('lifePeg')">Build Life Peg</button>
     <button onclick="runBuild('plunderPoint')">Plunder Point</button>
+  </div>
+
+  <h1 style="margin-top:40px;">Ship Launch Demo</h1>
+  <div class="demo-box" id="shipDemoBox" style="display:flex;align-items:center;justify-content:center;"></div>
+  <div class="controls">
+    <button onclick="runShipLaunch()">Launch Ship</button>
   </div>
 
   <script>
@@ -447,6 +541,35 @@
           box.innerHTML = '';
           buildRunning = false;
         }, 1400);
+      });
+    }
+
+    let shipRunning = false;
+    function runShipLaunch() {
+      if (shipRunning) return;
+      shipRunning = true;
+      const box = document.getElementById('shipDemoBox');
+      box.innerHTML = `
+        <div class="ship-launch ship-launch-drop" id="shipEl">
+          <div class="ship-launch-ship">⛵</div>
+          <div class="ship-launch-ripple">
+            <span class="ship-launch-wave ship-launch-wave-l">~</span>
+            <span class="ship-launch-droplet">💦</span>
+            <span class="ship-launch-wave ship-launch-wave-r">~</span>
+          </div>
+          <div class="ship-launch-label">Blackbeard</div>
+          <div class="ship-launch-text">Ship Launched!</div>
+        </div>`;
+      const el = document.getElementById('shipEl');
+      requestAnimationFrame(() => {
+        // Splash
+        setTimeout(() => { el.className = 'ship-launch ship-launch-splash'; }, 300);
+        // Hold
+        setTimeout(() => { el.className = 'ship-launch ship-launch-hold'; }, 600);
+        // Fadeout
+        setTimeout(() => { el.className = 'ship-launch ship-launch-fadeout'; }, 1800);
+        // Cleanup
+        setTimeout(() => { box.innerHTML = ''; shipRunning = false; }, 2100);
       });
     }
   </script>
