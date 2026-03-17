@@ -300,6 +300,13 @@ io.on('connection', (socket) => {
       playerName: found.player.name,
       ...result,
     });
+
+    // If storm moved, broadcast storm animation
+    if (result.stormMoved && state.storm) {
+      io.to(found.room.code).emit('storm-spawned', {
+        center: state.storm.center,
+      });
+    }
   });
 
   socket.on(EVENTS.MOVE_SHIP, ({ shipId, path }, callback) => {
@@ -514,6 +521,12 @@ io.on('connection', (socket) => {
       reroll: true,
       ...result,
     });
+
+    if (result.stormMoved && state.storm) {
+      io.to(found.room.code).emit('storm-spawned', {
+        center: state.storm.center,
+      });
+    }
   });
 
   socket.on(EVENTS.REROLL_SHIPLESS, ({ dieIndex, resourceCost }, callback) => {

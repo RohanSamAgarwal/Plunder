@@ -29,6 +29,7 @@ const EVENTS = {
   ATTACK_BRIBE_DECISION: 'attack-bribe-decision',
   ATTACK_BRIBE_RESOLVED: 'attack-bribe-resolved',
   SHIP_MOVED: 'ship-moved',
+  STORM_SPAWNED: 'storm-spawned',
 };
 
 let animIdCounter = 0;
@@ -65,6 +66,7 @@ export default function GamePage() {
   const [buildAnim, setBuildAnim] = useState(null);
   const [shipLaunchAnim, setShipLaunchAnim] = useState(null);
   const [shipMoveAnim, setShipMoveAnim] = useState(null);
+  const [stormAnim, setStormAnim] = useState(null);
   const [needsJoin, setNeedsJoin] = useState(false);
   const [joinName, setJoinName] = useState('');
   const [error, setError] = useState('');
@@ -183,6 +185,10 @@ export default function GamePage() {
       }),
       on(EVENTS.SHIP_MOVED, ({ playerName, playerColor, path }) => {
         setShipMoveAnim({ playerName, playerColor, path });
+      }),
+      on(EVENTS.STORM_SPAWNED, ({ center }) => {
+        addSystemMessage('⚡ The storm has moved!');
+        setStormAnim({ center });
       }),
       on(EVENTS.TREASURE_COLLECTED, ({ playerName, card }) => {
         addSystemMessage(`${playerName} found treasure: ${card.description}`);
@@ -347,6 +353,8 @@ export default function GamePage() {
       onShipLaunchComplete={() => setShipLaunchAnim(null)}
       shipMoveAnim={shipMoveAnim}
       onShipMoveComplete={() => setShipMoveAnim(null)}
+      stormAnim={stormAnim}
+      onStormComplete={() => setStormAnim(null)}
       roomCode={code}
     />
   );

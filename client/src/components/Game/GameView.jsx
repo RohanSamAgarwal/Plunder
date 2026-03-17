@@ -8,6 +8,7 @@ import CombatAnimation from './CombatAnimation';
 import BuildAnimation from './BuildAnimation';
 import ShipLaunchAnimation from './ShipLaunchAnimation';
 import ShipMoveAnimation from './ShipMoveAnimation';
+import StormAnimation from './StormAnimation';
 import { useAnimSpeed } from '../../App';
 
 const SIDEBAR_W = 400;
@@ -38,7 +39,7 @@ const RESOURCE_META = {
 };
 const EMPTY_RESOURCES = { wood: 0, iron: 0, rum: 0, gold: 0 };
 
-export default function GameView({ gameState, playerInfo, messages, pendingTrade, pendingTreaty, pendingAttackBribe, attackBribeDecision, drawnCard, onDismissCard, deckShuffling, animations, diceRollAnim, onDiceRollComplete, combatAnim, onCombatComplete, buildAnim, onBuildComplete, shipLaunchAnim, onShipLaunchComplete, shipMoveAnim, onShipMoveComplete, roomCode }) {
+export default function GameView({ gameState, playerInfo, messages, pendingTrade, pendingTreaty, pendingAttackBribe, attackBribeDecision, drawnCard, onDismissCard, deckShuffling, animations, diceRollAnim, onDiceRollComplete, combatAnim, onCombatComplete, buildAnim, onBuildComplete, shipLaunchAnim, onShipLaunchComplete, shipMoveAnim, onShipMoveComplete, stormAnim, onStormComplete, roomCode }) {
   const { emit } = useSocketContext();
   const { animSpeed, setAnimSpeed } = useAnimSpeed();
   const canvasRef = useRef(null);
@@ -922,6 +923,16 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
                 canvasW={canvasW}
                 canvasH={canvasH}
                 onComplete={onShipMoveComplete}
+              />
+            )}
+            {/* Storm lightning flash overlay */}
+            {stormAnim && stormAnim.center && (
+              <StormAnimation
+                center={stormAnim.center}
+                layout={zoomedLayout}
+                canvasW={canvasW}
+                canvasH={canvasH}
+                onComplete={onStormComplete}
               />
             )}
             {/* Animation overlays - positioned relative to rendered canvas size */}
