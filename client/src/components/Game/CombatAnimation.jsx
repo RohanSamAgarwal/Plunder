@@ -1,26 +1,29 @@
 import { useState, useEffect } from 'react';
 import { DiceCube } from './DiceFace';
+import { useAnimSpeed } from '../../App';
 
 export default function CombatAnimation({ combatResult, onComplete }) {
   const [phase, setPhase] = useState('rolling'); // rolling → landing → result → fadeout
+  const { animSpeed } = useAnimSpeed();
+  const m = animSpeed / 3; // multiplier: 1=0.33x, 3=1x, 5=1.67x
 
   useEffect(() => {
     const timers = [];
 
     // After tumble, land on the correct face
-    timers.push(setTimeout(() => setPhase('landing'), 500));
+    timers.push(setTimeout(() => setPhase('landing'), 500 * m));
 
     // Show result text
-    timers.push(setTimeout(() => setPhase('result'), 650));
+    timers.push(setTimeout(() => setPhase('result'), 650 * m));
 
     // Begin fade out (extra 2s hold so players can read the result)
-    timers.push(setTimeout(() => setPhase('fadeout'), 3400));
+    timers.push(setTimeout(() => setPhase('fadeout'), 3400 * m));
 
     // Remove component
-    timers.push(setTimeout(() => onComplete(), 3700));
+    timers.push(setTimeout(() => onComplete(), 3700 * m));
 
     return () => timers.forEach(clearTimeout);
-  }, [onComplete]);
+  }, [onComplete, m]);
 
   const {
     attacker,

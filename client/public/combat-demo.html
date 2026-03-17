@@ -242,6 +242,45 @@
     }
     .combat-win { color: #4ade80; }
     .combat-lose { color: #f87171; }
+
+    /* ── Build floating-icon animation ── */
+    .build-anim {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      pointer-events: none;
+      opacity: 0;
+      transform: translateY(0) scale(0.5);
+    }
+    .build-anim-pop {
+      opacity: 1;
+      transform: translateY(0) scale(1.2);
+      transition: opacity 0.1s ease-out, transform 0.1s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .build-anim-float {
+      opacity: 0;
+      transform: translateY(-60px) scale(1);
+      transition: opacity 1.2s ease-in, transform 1.3s ease-out;
+    }
+    .build-anim-icon {
+      font-size: 2rem;
+      filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6));
+    }
+    .build-anim-label {
+      font-family: 'Pirata One', Georgia, serif;
+      font-size: 1rem;
+      color: #d4a017;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+      white-space: nowrap;
+    }
+    .build-anim-player {
+      font-family: 'Pirata One', Georgia, serif;
+      font-size: 0.75rem;
+      color: #c8b888;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+      white-space: nowrap;
+    }
   </style>
 </head>
 <body>
@@ -251,6 +290,15 @@
     <button onclick="runCombat('win')">Attacker Wins</button>
     <button onclick="runCombat('lose')">Defender Wins</button>
     <button onclick="runCombat('ship')">Ship Combat</button>
+  </div>
+
+  <h1 style="margin-top:40px;">Build Animation Demo</h1>
+  <div class="demo-box" id="buildDemoBox" style="display:flex;align-items:center;justify-content:center;"></div>
+  <div class="controls">
+    <button onclick="runBuild('mast')">Build Mast</button>
+    <button onclick="runBuild('cannon')">Build Cannon</button>
+    <button onclick="runBuild('lifePeg')">Build Life Peg</button>
+    <button onclick="runBuild('plunderPoint')">Plunder Point</button>
   </div>
 
   <script>
@@ -368,6 +416,38 @@
         box.innerHTML = '';
         running = false;
       }, 3700);
+    }
+    const BUILD_ICONS = { mast: '🔱', cannon: '💣', lifePeg: '❤️', plunderPoint: '⭐', ship: '⛵' };
+    const BUILD_LABELS = { mast: '+1 Mast', cannon: '+1 Cannon', lifePeg: '+1 Life Peg', plunderPoint: '+1 Plunder Point', ship: 'Ship Launched!' };
+
+    let buildRunning = false;
+    function runBuild(type) {
+      if (buildRunning) return;
+      buildRunning = true;
+      const box = document.getElementById('buildDemoBox');
+      const icon = BUILD_ICONS[type] || '🔨';
+      const label = BUILD_LABELS[type] || type;
+      box.innerHTML = `
+        <div class="build-anim" id="buildEl">
+          <span class="build-anim-icon">${icon}</span>
+          <span class="build-anim-label">${label}</span>
+          <span class="build-anim-player">Blackbeard</span>
+        </div>`;
+      const el = document.getElementById('buildEl');
+      // Pop in
+      requestAnimationFrame(() => {
+        el.classList.add('build-anim-pop');
+        // Float up
+        setTimeout(() => {
+          el.classList.remove('build-anim-pop');
+          el.classList.add('build-anim-float');
+        }, 100);
+        // Cleanup
+        setTimeout(() => {
+          box.innerHTML = '';
+          buildRunning = false;
+        }, 1400);
+      });
     }
   </script>
 </body>

@@ -61,6 +61,7 @@ export default function GamePage() {
   const [animations, setAnimations] = useState([]);
   const [diceRollAnim, setDiceRollAnim] = useState(null);
   const [combatAnim, setCombatAnim] = useState(null);
+  const [buildAnim, setBuildAnim] = useState(null);
   const [needsJoin, setNeedsJoin] = useState(false);
   const [joinName, setJoinName] = useState('');
   const [error, setError] = useState('');
@@ -171,7 +172,7 @@ export default function GamePage() {
       on(EVENTS.BUILT, ({ playerName, buildType, location }) => {
         const label = buildType === 'ship' ? 'a ship' : buildType === 'plunderPoint' ? 'a plunder point' : `a ${buildType}`;
         addSystemMessage(`${playerName} built ${label}`);
-        addAnimation('build', buildType === 'ship' ? '\u26F5' : '\uD83D\uDD28', `${playerName} built ${label}`, location, 2000);
+        setBuildAnim({ playerName, buildType, location });
       }),
       on(EVENTS.TREASURE_COLLECTED, ({ playerName, card }) => {
         addSystemMessage(`${playerName} found treasure: ${card.description}`);
@@ -330,6 +331,8 @@ export default function GamePage() {
       onDiceRollComplete={() => setDiceRollAnim(null)}
       combatAnim={combatAnim}
       onCombatComplete={() => setCombatAnim(null)}
+      buildAnim={buildAnim}
+      onBuildComplete={() => setBuildAnim(null)}
       roomCode={code}
     />
   );

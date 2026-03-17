@@ -5,6 +5,8 @@ import ActionPanel from './ActionPanel';
 import ChatLog from './ChatLog';
 import DiceRoll3D from './DiceRoll3D';
 import CombatAnimation from './CombatAnimation';
+import BuildAnimation from './BuildAnimation';
+import { useAnimSpeed } from '../../App';
 
 const SIDEBAR_W = 400;
 const TOP_BAR_H = 52;
@@ -34,8 +36,9 @@ const RESOURCE_META = {
 };
 const EMPTY_RESOURCES = { wood: 0, iron: 0, rum: 0, gold: 0 };
 
-export default function GameView({ gameState, playerInfo, messages, pendingTrade, pendingTreaty, pendingAttackBribe, attackBribeDecision, drawnCard, onDismissCard, deckShuffling, animations, diceRollAnim, onDiceRollComplete, combatAnim, onCombatComplete, roomCode }) {
+export default function GameView({ gameState, playerInfo, messages, pendingTrade, pendingTreaty, pendingAttackBribe, attackBribeDecision, drawnCard, onDismissCard, deckShuffling, animations, diceRollAnim, onDiceRollComplete, combatAnim, onCombatComplete, buildAnim, onBuildComplete, roomCode }) {
   const { emit } = useSocketContext();
+  const { animSpeed, setAnimSpeed } = useAnimSpeed();
   const canvasRef = useRef(null);
   const boardContainerRef = useRef(null);
   const [selectedShip, setSelectedShip] = useState(null);
@@ -867,6 +870,27 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
                 onComplete={onCombatComplete}
               />
             )}
+            {/* Build floating icon overlay */}
+            {buildAnim && (() => {
+              const loc = buildAnim.location;
+              const hasPos = loc?.col != null && loc?.row != null;
+              const style = hasPos
+                ? {
+                    left: `${((zoomedLayout.gridPad + loc.col * zoomedLayout.tileSize + zoomedLayout.tileSize / 2) / canvasW) * 100}%`,
+                    top: `${((zoomedLayout.gridPad + loc.row * zoomedLayout.tileSize) / canvasH) * 100}%`,
+                    transform: 'translate(-50%, -50%)',
+                  }
+                : { left: '50%', top: '50%', transform: 'translate(-50%, -50%)' };
+              return (
+                <div className="absolute pointer-events-none" style={style}>
+                  <BuildAnimation
+                    buildType={buildAnim.buildType}
+                    playerName={buildAnim.playerName}
+                    onComplete={onBuildComplete}
+                  />
+                </div>
+              );
+            })()}
             {/* Animation overlays - positioned relative to rendered canvas size */}
             {animations?.length > 0 && (
               <div className="absolute inset-0 pointer-events-none overflow-visible">
@@ -955,6 +979,19 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
                 </span>
               )}
             </button>
+            {/* Animation speed toggle */}
+            <div className="anim-speed-toggle">
+              <span className="anim-speed-label">⏱</span>
+              {[1, 2, 3, 4, 5].map(n => (
+                <button
+                  key={n}
+                  onClick={() => setAnimSpeed(n)}
+                  className={`anim-speed-btn ${animSpeed === n ? 'anim-speed-btn-active' : ''}`}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
           </div>
           {/* Tab content */}
           {activeTab === 'controls' ? (

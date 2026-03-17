@@ -7,12 +7,16 @@ import BugReportButton from './components/BugReportButton';
 
 export const SocketContext = createContext(null);
 export const PlayerContext = createContext(null);
+export const AnimSpeedContext = createContext(null);
 
 export function usePlayerContext() {
   return useContext(PlayerContext);
 }
 export function useSocketContext() {
   return useContext(SocketContext);
+}
+export function useAnimSpeed() {
+  return useContext(AnimSpeedContext);
 }
 
 export default function App() {
@@ -28,16 +32,27 @@ export default function App() {
     }
   }, [playerInfo]);
 
+  const [animSpeed, setAnimSpeed] = useState(() => {
+    const saved = parseInt(localStorage.getItem('plunder_anim_speed'));
+    return (saved >= 1 && saved <= 5) ? saved : 3;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('plunder_anim_speed', String(animSpeed));
+  }, [animSpeed]);
+
   return (
     <SocketContext.Provider value={socketUtils}>
       <PlayerContext.Provider value={{ playerInfo, setPlayerInfo }}>
-        <div className="min-h-screen bg-pirate-deepSea">
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/game/:code" element={<GamePage />} />
-          </Routes>
-          <BugReportButton />
-        </div>
+        <AnimSpeedContext.Provider value={{ animSpeed, setAnimSpeed }}>
+          <div className="min-h-screen bg-pirate-deepSea">
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/game/:code" element={<GamePage />} />
+            </Routes>
+            <BugReportButton />
+          </div>
+        </AnimSpeedContext.Provider>
       </PlayerContext.Provider>
     </SocketContext.Provider>
   );
