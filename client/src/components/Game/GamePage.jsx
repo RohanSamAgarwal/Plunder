@@ -69,6 +69,8 @@ export default function GamePage() {
   const [shipMoveAnim, setShipMoveAnim] = useState(null);
   const [stormAnim, setStormAnim] = useState(null);
   const [eventAnim, setEventAnim] = useState(null);
+  const [gameStartAnim, setGameStartAnim] = useState(false);
+  const [gameOverAnim, setGameOverAnim] = useState(null);
   const [needsJoin, setNeedsJoin] = useState(false);
   const [joinName, setJoinName] = useState('');
   const [error, setError] = useState('');
@@ -136,8 +138,14 @@ export default function GamePage() {
       on(EVENTS.SETTINGS_UPDATED, ({ room: r }) => setRoom(r)),
       on(EVENTS.GAME_STARTED, ({ gameState: gs, yourPlayerId, startingIslands }) => {
         setGameState(gs);
+        setGameStartAnim(true);
       }),
       on(EVENTS.GAME_STATE_UPDATE, ({ gameState: gs }) => {
+        // Detect game over
+        if (gs.phase === 'game_over' && gs.winner && !gameOverAnim) {
+          const winnerPlayer = gs.players?.[gs.winner];
+          setGameOverAnim({ winnerName: winnerPlayer?.name || 'Unknown' });
+        }
         setGameState(gs);
       }),
       on(EVENTS.CHAT_BROADCAST, (msg) => {
@@ -407,6 +415,10 @@ export default function GamePage() {
       onStormComplete={() => setStormAnim(null)}
       eventAnim={eventAnim}
       onEventComplete={() => setEventAnim(null)}
+      gameStartAnim={gameStartAnim}
+      onGameStartComplete={() => setGameStartAnim(false)}
+      gameOverAnim={gameOverAnim}
+      onGameOverComplete={() => setGameOverAnim(null)}
       roomCode={code}
     />
   );

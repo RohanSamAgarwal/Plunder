@@ -10,6 +10,8 @@ import ShipLaunchAnimation from './ShipLaunchAnimation';
 import ShipMoveAnimation from './ShipMoveAnimation';
 import StormAnimation from './StormAnimation';
 import EventAnimation from './EventAnimation';
+import GameStartAnimation from './GameStartAnimation';
+import GameOverAnimation from './GameOverAnimation';
 import { useAnimSpeed } from '../../App';
 
 const SIDEBAR_W = 400;
@@ -40,7 +42,7 @@ const RESOURCE_META = {
 };
 const EMPTY_RESOURCES = { wood: 0, iron: 0, rum: 0, gold: 0 };
 
-export default function GameView({ gameState, playerInfo, messages, pendingTrade, pendingTreaty, pendingAttackBribe, attackBribeDecision, drawnCard, onDismissCard, deckShuffling, animations, diceRollAnim, onDiceRollComplete, combatAnim, onCombatComplete, buildAnim, onBuildComplete, shipLaunchAnim, onShipLaunchComplete, shipMoveAnim, onShipMoveComplete, stormAnim, onStormComplete, eventAnim, onEventComplete, roomCode }) {
+export default function GameView({ gameState, playerInfo, messages, pendingTrade, pendingTreaty, pendingAttackBribe, attackBribeDecision, drawnCard, onDismissCard, deckShuffling, animations, diceRollAnim, onDiceRollComplete, combatAnim, onCombatComplete, buildAnim, onBuildComplete, shipLaunchAnim, onShipLaunchComplete, shipMoveAnim, onShipMoveComplete, stormAnim, onStormComplete, eventAnim, onEventComplete, gameStartAnim, onGameStartComplete, gameOverAnim, onGameOverComplete, roomCode }) {
   const { emit } = useSocketContext();
   const { animSpeed, setAnimSpeed } = useAnimSpeed();
   const canvasRef = useRef(null);
@@ -944,6 +946,17 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
                 subtitle={eventAnim.subtitle}
                 color={eventAnim.color}
                 onComplete={onEventComplete}
+              />
+            )}
+            {/* Game start animation */}
+            {gameStartAnim && (
+              <GameStartAnimation onComplete={onGameStartComplete} />
+            )}
+            {/* Game over animation */}
+            {gameOverAnim && (
+              <GameOverAnimation
+                winnerName={gameOverAnim.winnerName}
+                onComplete={onGameOverComplete}
               />
             )}
             {/* Animation overlays - positioned relative to rendered canvas size */}
