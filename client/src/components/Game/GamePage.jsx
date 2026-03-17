@@ -30,6 +30,7 @@ const EVENTS = {
   ATTACK_BRIBE_RESOLVED: 'attack-bribe-resolved',
   SHIP_MOVED: 'ship-moved',
   STORM_SPAWNED: 'storm-spawned',
+  RESOURCES_DRAWN: 'resources-drawn',
 };
 
 let animIdCounter = 0;
@@ -113,10 +114,23 @@ export default function GamePage() {
     if (!connected) return;
 
     const unsubs = [
-      on(EVENTS.PLAYER_JOINED, ({ room: r }) => setRoom(r)),
-      on(EVENTS.PLAYER_LEFT, ({ room: r }) => setRoom(r)),
+      on(EVENTS.PLAYER_JOINED, ({ player, room: r }) => {
+        setRoom(r);
+        if (player?.name) {
+          addSystemMessage(`${player.name} joined the game`);
+          setEventAnim({ icon: '⚓', title: `${player.name} Joined!`, color: '#4ade80' });
+        }
+      }),
+      on(EVENTS.PLAYER_LEFT, ({ name, room: r }) => {
+        setRoom(r);
+        if (name) {
+          addSystemMessage(`${name} left the game`);
+          setEventAnim({ icon: '🚢', title: `${name} Left`, color: '#f87171' });
+        }
+      }),
       on(EVENTS.PLAYER_RECONNECTED, ({ playerId, name }) => {
         addSystemMessage(`${name} reconnected`);
+        setEventAnim({ icon: '⚓', title: `${name} Reconnected`, color: '#4ade80' });
       }),
       on(EVENTS.COLOR_CHOSEN, ({ room: r }) => setRoom(r)),
       on(EVENTS.SETTINGS_UPDATED, ({ room: r }) => setRoom(r)),
@@ -195,14 +209,28 @@ export default function GamePage() {
           setShipLaunchAnim({ playerName, location });
         } else {
           setBuildAnim({ playerName, buildType, location });
+          // Extra event animations for special builds
+          if (buildType === 'plunderPoint') {
+            setTimeout(() => setEventAnim({ icon: '⭐', title: 'Plunder Point!', subtitle: `${playerName} bought a plunder point`, color: '#eab308' }), 1500);
+          } else if (buildType === 'lifePeg') {
+            setTimeout(() => setEventAnim({ icon: '🔧', title: 'Ship Repaired!', subtitle: `${playerName} restored a life peg`, color: '#4ade80' }), 1500);
+          }
         }
       }),
-      on(EVENTS.SHIP_MOVED, ({ playerName, playerColor, path }) => {
+      on(EVENTS.SHIP_MOVED, ({ playerName, playerColor, path, arrivedAtPort }) => {
         setShipMoveAnim({ playerName, playerColor, path });
+        if (arrivedAtPort) {
+          const pathLen = path?.length || 0;
+          setTimeout(() => setEventAnim({ icon: '⚓', title: 'Port Arrival', subtitle: `${playerName} docked at port`, color: '#60a5fa' }), pathLen * 180 + 300);
+        }
       }),
       on(EVENTS.STORM_SPAWNED, ({ center }) => {
         addSystemMessage('⚡ The storm has moved!');
         setStormAnim({ center });
+      }),
+      on(EVENTS.RESOURCES_DRAWN, ({ playerName, drawn }) => {
+        const summary = Object.entries(drawn || {}).filter(([, v]) => v > 0).map(([k, v]) => `${v} ${k}`).join(', ');
+        if (summary) addSystemMessage(`${playerName} drew ${summary}`);
       }),
       on(EVENTS.TREASURE_COLLECTED, ({ playerName, card }) => {
         addSystemMessage(`${playerName} found treasure: ${card.description}`);

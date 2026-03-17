@@ -277,6 +277,13 @@ io.on('connection', (socket) => {
     const result = drawResources(state, found.player.id);
     broadcastGameState(found.room);
     callback?.(result);
+
+    if (result.drawn) {
+      io.to(found.room.code).emit(EVENTS.RESOURCES_DRAWN, {
+        playerName: found.player.name,
+        drawn: result.drawn,
+      });
+    }
   });
 
   socket.on(EVENTS.ROLL_SAILING_DIE, (_, callback) => {
@@ -329,10 +336,12 @@ io.on('connection', (socket) => {
 
     // Broadcast movement path for animation
     if (oldPosition && result.newPosition) {
+      const destTile = state.board?.[result.newPosition.row]?.[result.newPosition.col];
       io.to(found.room.code).emit(EVENTS.SHIP_MOVED, {
         playerName: found.player.name,
         playerColor: found.player.color,
         path: [oldPosition, ...path],
+        arrivedAtPort: destTile?.type === 'port' || false,
       });
     }
   });
