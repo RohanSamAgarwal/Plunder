@@ -191,8 +191,7 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
     return gameState.totalRows * zoomedLayout.tileSize + zoomedLayout.gridPad * 2;
   }, [gameState?.totalRows, zoomedLayout]);
 
-  // Redraw board whenever state changes
-  // Uses animation loop when ship selected or tile hovered for pulse effects
+  // Continuous board redraw for wave animation + interaction pulses
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !gameState) return;
@@ -204,12 +203,21 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
 
     draw();
 
-    if (selectedShip || hoveredTile) {
-      let raf;
-      const loop = () => { draw(); raf = requestAnimationFrame(loop); };
+    // Full-speed loop when interacting, slow loop (~12fps) for ambient waves
+    const interacting = selectedShip || hoveredTile;
+    let raf;
+    let lastFrame = 0;
+    const interval = interacting ? 0 : 80; // 0 = every frame, 80ms ≈ 12fps
+
+    const loop = (now) => {
+      if (now - lastFrame >= interval) {
+        draw();
+        lastFrame = now;
+      }
       raf = requestAnimationFrame(loop);
-      return () => cancelAnimationFrame(raf);
-    }
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
   }, [gameState, selectedShip, hoveredTile, validMoves, zoomedLayout]);
 
   // Update valid moves when ship selected

@@ -624,6 +624,30 @@ function drawDynamicLayer(ctx, gameState, options, layout) {
   const ts = layout.tileSize;
   const gp = layout.gridPad;
 
+  // Ambient wave shimmer overlay (subtle animated light on sea tiles)
+  const time = Date.now() * 0.0008;
+  ctx.save();
+  ctx.globalAlpha = 0.04;
+  for (let r = 0; r < totalRows; r++) {
+    for (let c = 0; c < totalCols; c++) {
+      const tile = board[r]?.[c];
+      if (!tile || (tile.type !== 'sea' && tile.type !== 'port')) continue;
+      const phase = c * 0.5 + r * 0.3;
+      const shimmer = Math.sin(time + phase) * 0.5 + 0.5; // 0-1
+      if (shimmer < 0.3) continue; // only draw brighter moments
+      const x = gp + c * ts;
+      const y = gp + r * ts;
+      const sy = y + ts * (0.3 + Math.sin(time * 1.2 + phase) * 0.15);
+      ctx.strokeStyle = `rgba(140, 210, 240, ${shimmer * 0.8})`;
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(x + ts * 0.15, sy);
+      ctx.quadraticCurveTo(x + ts * 0.5, sy - ts * 0.03 * shimmer, x + ts * 0.85, sy);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+
   // Valid move highlights
   if (validMoves) {
     for (const m of validMoves) {
