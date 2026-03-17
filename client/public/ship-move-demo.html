@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Ship Move Demo</title>
+  <link href="https://fonts.googleapis.com/css2?family=Pirata+One&display=swap" rel="stylesheet" />
+  <style>
+    body {
+      margin: 0;
+      background: #1a2a3a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: 'Pirata One', Georgia, serif;
+      color: #d4a017;
+    }
+    h1 { margin-bottom: 8px; font-size: 1.6rem; }
+    .controls {
+      margin-bottom: 16px;
+      display: flex;
+      gap: 12px;
+    }
+    .controls button {
+      font-family: 'Pirata One', Georgia, serif;
+      background: #2a3a4a;
+      color: #d4a017;
+      border: 2px solid #8b6914;
+      border-radius: 8px;
+      padding: 8px 20px;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    .controls button:hover { background: #3a4a5a; }
+
+    .board {
+      position: relative;
+      width: 600px;
+      height: 400px;
+      background: #2a6496;
+      border: 3px solid #8b6914;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    /* Grid lines */
+    .grid-tile {
+      position: absolute;
+      border: 1px solid rgba(255,255,255,0.1);
+      box-sizing: border-box;
+    }
+
+    /* Ship icon */
+    .ship-move-icon {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      font-size: 1.6rem;
+      z-index: 30;
+      pointer-events: none;
+      filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6));
+      opacity: 1;
+    }
+    .ship-move-fadeout {
+      opacity: 0;
+      transition: opacity 0.3s ease-out;
+    }
+    .ship-move-trail {
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: rgba(173, 216, 230, 0.6);
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      z-index: 29;
+    }
+    .path-dot {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: rgba(212, 160, 23, 0.4);
+      transform: translate(-50%, -50%);
+      z-index: 5;
+    }
+    .info {
+      margin-top: 12px;
+      color: #c8b888;
+      font-family: sans-serif;
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>⛵ Ship Movement Demo</h1>
+  <div class="controls">
+    <button onclick="runDemo('straight')">Straight Line</button>
+    <button onclick="runDemo('zigzag')">Zigzag Path</button>
+    <button onclick="runDemo('long')">Long Voyage</button>
+  </div>
+  <div class="board" id="board"></div>
+  <div class="info">Click a button to see the ship slide along the path</div>
+
+  <script>
+    const COLS = 12;
+    const ROWS = 8;
+    const board = document.getElementById('board');
+    const boardW = 600;
+    const boardH = 400;
+    const tileW = boardW / COLS;
+    const tileH = boardH / ROWS;
+
+    // Draw grid
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const div = document.createElement('div');
+        div.className = 'grid-tile';
+        div.style.left = `${c * tileW}px`;
+        div.style.top = `${r * tileH}px`;
+        div.style.width = `${tileW}px`;
+        div.style.height = `${tileH}px`;
+        board.appendChild(div);
+      }
+    }
+
+    const PATHS = {
+      straight: [
+        {col:1,row:4},{col:2,row:4},{col:3,row:4},{col:4,row:4},{col:5,row:4},{col:6,row:4}
+      ],
+      zigzag: [
+        {col:2,row:1},{col:3,row:1},{col:3,row:2},{col:4,row:2},{col:4,row:3},{col:5,row:3},{col:5,row:4},{col:6,row:4}
+      ],
+      long: [
+        {col:1,row:1},{col:2,row:1},{col:3,row:1},{col:4,row:1},{col:5,row:1},
+        {col:5,row:2},{col:5,row:3},{col:5,row:4},{col:5,row:5},{col:5,row:6},
+        {col:6,row:6},{col:7,row:6},{col:8,row:6},{col:9,row:6},{col:10,row:6}
+      ]
+    };
+
+    let running = false;
+
+    function toX(col) { return col * tileW + tileW / 2; }
+    function toY(row) { return row * tileH + tileH / 2; }
+
+    function runDemo(type) {
+      if (running) return;
+      running = true;
+
+      // Clear previous
+      board.querySelectorAll('.ship-move-icon, .ship-move-trail, .path-dot').forEach(el => el.remove());
+
+      const path = PATHS[type];
+      const perStep = 600; // slowed for demo viewing
+
+      // Show path dots
+      path.forEach(p => {
+        const dot = document.createElement('div');
+        dot.className = 'path-dot';
+        dot.style.left = `${toX(p.col)}px`;
+        dot.style.top = `${toY(p.row)}px`;
+        board.appendChild(dot);
+      });
+
+      // Create ship
+      const ship = document.createElement('div');
+      ship.className = 'ship-move-icon';
+      ship.textContent = '⛵';
+      ship.style.left = `${toX(path[0].col)}px`;
+      ship.style.top = `${toY(path[0].row)}px`;
+      ship.style.transition = `left ${perStep}ms ease-in-out, top ${perStep}ms ease-in-out`;
+      board.appendChild(ship);
+
+      let step = 0;
+      const trails = [];
+
+      function moveNext() {
+        step++;
+        if (step >= path.length) {
+          // Fadeout
+          setTimeout(() => {
+            ship.classList.add('ship-move-fadeout');
+            setTimeout(() => {
+              board.querySelectorAll('.ship-move-icon, .ship-move-trail, .path-dot').forEach(el => el.remove());
+              running = false;
+            }, 400);
+          }, 200);
+          return;
+        }
+
+        // Add trail at previous position
+        const prev = path[step - 1];
+        const trail = document.createElement('div');
+        trail.className = 'ship-move-trail';
+        trail.style.left = `${toX(prev.col)}px`;
+        trail.style.top = `${toY(prev.row)}px`;
+        trails.push(trail);
+        board.appendChild(trail);
+
+        // Fade old trails
+        trails.forEach((t, i) => {
+          t.style.opacity = 0.15 + ((trails.length - 1 - i < 3 ? (trails.length - 1 - i) : -1) >= 0 ? ((3 - (trails.length - 1 - i)) / 3) * 0.35 : 0);
+          if (trails.length - 1 - i >= 3) t.style.opacity = 0;
+        });
+
+        // Move ship
+        const p = path[step];
+        ship.style.left = `${toX(p.col)}px`;
+        ship.style.top = `${toY(p.row)}px`;
+
+        setTimeout(moveNext, perStep);
+      }
+
+      setTimeout(moveNext, perStep);
+    }
+  </script>
+</body>
+</html>

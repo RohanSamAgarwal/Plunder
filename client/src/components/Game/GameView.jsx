@@ -7,6 +7,7 @@ import DiceRoll3D from './DiceRoll3D';
 import CombatAnimation from './CombatAnimation';
 import BuildAnimation from './BuildAnimation';
 import ShipLaunchAnimation from './ShipLaunchAnimation';
+import ShipMoveAnimation from './ShipMoveAnimation';
 import { useAnimSpeed } from '../../App';
 
 const SIDEBAR_W = 400;
@@ -37,7 +38,7 @@ const RESOURCE_META = {
 };
 const EMPTY_RESOURCES = { wood: 0, iron: 0, rum: 0, gold: 0 };
 
-export default function GameView({ gameState, playerInfo, messages, pendingTrade, pendingTreaty, pendingAttackBribe, attackBribeDecision, drawnCard, onDismissCard, deckShuffling, animations, diceRollAnim, onDiceRollComplete, combatAnim, onCombatComplete, buildAnim, onBuildComplete, shipLaunchAnim, onShipLaunchComplete, roomCode }) {
+export default function GameView({ gameState, playerInfo, messages, pendingTrade, pendingTreaty, pendingAttackBribe, attackBribeDecision, drawnCard, onDismissCard, deckShuffling, animations, diceRollAnim, onDiceRollComplete, combatAnim, onCombatComplete, buildAnim, onBuildComplete, shipLaunchAnim, onShipLaunchComplete, shipMoveAnim, onShipMoveComplete, roomCode }) {
   const { emit } = useSocketContext();
   const { animSpeed, setAnimSpeed } = useAnimSpeed();
   const canvasRef = useRef(null);
@@ -912,6 +913,17 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
                 </div>
               );
             })()}
+            {/* Ship move sliding overlay */}
+            {shipMoveAnim && shipMoveAnim.path?.length >= 2 && (
+              <ShipMoveAnimation
+                path={shipMoveAnim.path}
+                playerColor={shipMoveAnim.playerColor}
+                layout={zoomedLayout}
+                canvasW={canvasW}
+                canvasH={canvasH}
+                onComplete={onShipMoveComplete}
+              />
+            )}
             {/* Animation overlays - positioned relative to rendered canvas size */}
             {animations?.length > 0 && (
               <div className="absolute inset-0 pointer-events-none overflow-visible">

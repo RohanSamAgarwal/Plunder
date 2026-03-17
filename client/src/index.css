@@ -636,3 +636,31 @@ body {
 .bg-player-yellow { background: #eab308; }
 .bg-player-purple { background: #a855f7; }
 .bg-player-orange { background: #f97316; }
+
+/* ── Ship Move Animation ─────────────────────────────── */
+.ship-move-icon {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: 1.6rem;
+  z-index: 30;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6));
+  opacity: 1;
+  transition-property: left, top, opacity;
+}
+
+.ship-move-fadeout {
+  opacity: 0;
+  transition: opacity 0.3s ease-out;
+}
+
+.ship-move-trail {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(173, 216, 230, 0.6);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 29;
+}

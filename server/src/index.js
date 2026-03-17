@@ -311,11 +311,23 @@ io.on('connection', (socket) => {
       return callback?.({ error: 'Not your turn' });
     }
 
+    const ship = state.players[found.player.id]?.ships?.find(s => s.id === shipId);
+    const oldPosition = ship ? { ...ship.position } : null;
+
     const result = moveShip(state, found.player.id, shipId, path);
     if (result.error) return callback?.(result);
 
     broadcastGameState(found.room);
     callback?.(result);
+
+    // Broadcast movement path for animation
+    if (oldPosition && result.newPosition) {
+      io.to(found.room.code).emit(EVENTS.SHIP_MOVED, {
+        playerName: found.player.name,
+        playerColor: found.player.color,
+        path: [oldPosition, ...path],
+      });
+    }
   });
 
   // Building is allowed at any time during the player's turn

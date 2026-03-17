@@ -28,6 +28,7 @@ const EVENTS = {
   ATTACK_BRIBE_PENDING: 'attack-bribe-pending',
   ATTACK_BRIBE_DECISION: 'attack-bribe-decision',
   ATTACK_BRIBE_RESOLVED: 'attack-bribe-resolved',
+  SHIP_MOVED: 'ship-moved',
 };
 
 let animIdCounter = 0;
@@ -63,6 +64,7 @@ export default function GamePage() {
   const [combatAnim, setCombatAnim] = useState(null);
   const [buildAnim, setBuildAnim] = useState(null);
   const [shipLaunchAnim, setShipLaunchAnim] = useState(null);
+  const [shipMoveAnim, setShipMoveAnim] = useState(null);
   const [needsJoin, setNeedsJoin] = useState(false);
   const [joinName, setJoinName] = useState('');
   const [error, setError] = useState('');
@@ -178,6 +180,9 @@ export default function GamePage() {
         } else {
           setBuildAnim({ playerName, buildType, location });
         }
+      }),
+      on(EVENTS.SHIP_MOVED, ({ playerName, playerColor, path }) => {
+        setShipMoveAnim({ playerName, playerColor, path });
       }),
       on(EVENTS.TREASURE_COLLECTED, ({ playerName, card }) => {
         addSystemMessage(`${playerName} found treasure: ${card.description}`);
@@ -340,6 +345,8 @@ export default function GamePage() {
       onBuildComplete={() => setBuildAnim(null)}
       shipLaunchAnim={shipLaunchAnim}
       onShipLaunchComplete={() => setShipLaunchAnim(null)}
+      shipMoveAnim={shipMoveAnim}
+      onShipMoveComplete={() => setShipMoveAnim(null)}
       roomCode={code}
     />
   );
