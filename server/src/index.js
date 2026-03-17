@@ -83,7 +83,7 @@ app.post('/api/bugs', async (req, res) => {
         'Accept': 'application/vnd.github+json',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ title, body, labels: ['bug'] }),
+      body: JSON.stringify({ title, body, labels: ['bug', 'in-game bug report'] }),
     });
 
     if (!ghRes.ok) {
@@ -941,30 +941,36 @@ app.get('*', (req, res) => {
   res.sendFile(join(clientBuildPath, 'index.html'));
 });
 
-// Ensure 'bug' label exists in the GitHub repo
-async function ensureBugLabel() {
+// Ensure issue labels exist in the GitHub repo
+async function ensureLabels() {
   const token = process.env.GITHUB_TOKEN;
   if (!token) return;
-  try {
-    const res = await fetch('https://api.github.com/repos/RohanSamAgarwal/Plunder/labels', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/vnd.github+json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ name: 'bug', color: 'd73a4a', description: 'In-game bug report' }),
-    });
-    if (res.ok) console.log('Created "bug" label');
-    else if (res.status === 422) console.log('"bug" label already exists');
-    else console.warn('Could not create bug label:', res.status);
-  } catch (err) {
-    console.warn('Failed to ensure bug label:', err.message);
+  const labels = [
+    { name: 'bug', color: 'd73a4a', description: 'Something isn\'t working' },
+    { name: 'in-game bug report', color: '1d76db', description: 'Submitted via in-game bug report button' },
+  ];
+  for (const label of labels) {
+    try {
+      const res = await fetch('https://api.github.com/repos/RohanSamAgarwal/Plunder/labels', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/vnd.github+json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(label),
+      });
+      if (res.ok) console.log(`Created "${label.name}" label`);
+      else if (res.status === 422) console.log(`"${label.name}" label already exists`);
+      else console.warn(`Could not create "${label.name}" label:`, res.status);
+    } catch (err) {
+      console.warn(`Failed to ensure "${label.name}" label:`, err.message);
+    }
   }
 }
 
 const PORT = process.env.PORT || 3001;
 httpServer.listen(PORT, () => {
   console.log(`Plunder server running on port ${PORT}`);
-  ensureBugLabel();
+  ensureLabels();
 });
