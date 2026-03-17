@@ -18,6 +18,7 @@ export function useSocket() {
     });
 
     socketRef.current = socket;
+    window.__socket = socket; // temp debug - remove before commit
 
     socket.on('connect', () => {
       setConnected(true);

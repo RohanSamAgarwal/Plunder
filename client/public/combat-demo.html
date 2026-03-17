@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Combat Dice Duel Demo</title>
+  <link href="https://fonts.googleapis.com/css2?family=Pirata+One&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #1a2634;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: 'Pirata One', Georgia, serif;
+      color: #f5f0e6;
+    }
+
+    h1 { color: #d4a017; margin-bottom: 12px; font-size: 1.8rem; }
+
+    .demo-box {
+      position: relative;
+      width: 500px;
+      height: 320px;
+      background: #0e1a26;
+      border: 2px solid #8b6914;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .controls {
+      margin-top: 16px;
+      display: flex;
+      gap: 12px;
+    }
+    .controls button {
+      font-family: 'Pirata One', Georgia, serif;
+      font-size: 1rem;
+      padding: 8px 20px;
+      border: 2px solid #8b6914;
+      border-radius: 8px;
+      background: #d4a017;
+      color: #1a2634;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .controls button:hover { background: #e8b82a; }
+
+    /* ── Dice base styles ── */
+    .dice-scene {
+      width: 90px;
+      height: 90px;
+      perspective: 500px;
+    }
+    .dice-cube {
+      width: 90px;
+      height: 90px;
+      position: relative;
+      transform-style: preserve-3d;
+    }
+    .dice-rolling {
+      animation: diceRoll 0.5s ease-in-out forwards;
+    }
+    .dice-landed {
+      transition: transform 0.15s cubic-bezier(0.23, 1, 0.32, 1);
+    }
+    @keyframes diceRoll {
+      0%   { transform: rotateX(0deg)   rotateY(0deg)   rotateZ(0deg); }
+      20%  { transform: rotateX(200deg) rotateY(130deg)  rotateZ(60deg); }
+      40%  { transform: rotateX(400deg) rotateY(280deg)  rotateZ(180deg); }
+      60%  { transform: rotateX(520deg) rotateY(400deg)  rotateZ(100deg); }
+      80%  { transform: rotateX(680deg) rotateY(520deg)  rotateZ(280deg); }
+      100% { transform: rotateX(720deg) rotateY(360deg)  rotateZ(360deg); }
+    }
+    .dice-face {
+      position: absolute;
+      width: 90px;
+      height: 90px;
+      border-radius: 12px;
+      background: #f5f0e6;
+      border: 2px solid #8b6914;
+      box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      backface-visibility: visible;
+    }
+    .dice-front  { transform: translateZ(45px); }
+    .dice-back   { transform: rotateY(180deg) translateZ(45px); }
+    .dice-right  { transform: rotateY(90deg)  translateZ(45px); }
+    .dice-left   { transform: rotateY(-90deg) translateZ(45px); }
+    .dice-top    { transform: rotateX(90deg)  translateZ(45px); }
+    .dice-bottom { transform: rotateX(-90deg) translateZ(45px); }
+    .dice-pips {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+      width: 60px;
+      height: 60px;
+      padding: 4px;
+    }
+    .dice-pip {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #3d2b1f;
+      align-self: center;
+      justify-self: center;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    }
+
+    /* ── Combat overlay ── */
+    .combat-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      pointer-events: none;
+      background: rgba(0, 0, 0, 0.35);
+      animation: overlayIn 0.2s ease-out;
+    }
+    .combat-overlay-fadeout {
+      opacity: 0;
+      transition: opacity 0.3s ease-out;
+    }
+    @keyframes overlayIn {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+    .combat-duel-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+    .combat-labels {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-family: 'Pirata One', Georgia, serif;
+      font-size: 1.1rem;
+      text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
+    }
+    .combat-label-attacker { color: #ff6b6b; }
+    .combat-label-defender { color: #6bb5ff; }
+    .combat-vs { font-size: 1.3rem; }
+    .combat-dice-row {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+    }
+    .combat-die { position: relative; }
+    .combat-die .dice-scene {
+      width: 70px;
+      height: 70px;
+    }
+    .combat-die .dice-cube {
+      width: 70px;
+      height: 70px;
+    }
+    .combat-die .dice-face {
+      width: 70px;
+      height: 70px;
+    }
+    .combat-die .dice-face { transform: none; }
+    .combat-die .dice-front  { transform: translateZ(35px); }
+    .combat-die .dice-back   { transform: rotateY(180deg) translateZ(35px); }
+    .combat-die .dice-right  { transform: rotateY(90deg)  translateZ(35px); }
+    .combat-die .dice-left   { transform: rotateY(-90deg) translateZ(35px); }
+    .combat-die .dice-top    { transform: rotateX(90deg)  translateZ(35px); }
+    .combat-die .dice-bottom { transform: rotateX(-90deg) translateZ(35px); }
+    .combat-die-attacker .dice-scene {
+      filter: drop-shadow(0 0 8px rgba(255, 80, 80, 0.5));
+    }
+    .combat-die-defender .dice-scene {
+      filter: drop-shadow(0 0 8px rgba(80, 150, 255, 0.5));
+    }
+    .combat-vs-icon {
+      font-family: 'Pirata One', Georgia, serif;
+      font-size: 1.5rem;
+      color: #d4a017;
+      text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
+      font-weight: bold;
+    }
+    .combat-totals {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      opacity: 0;
+      transform: translateY(6px);
+      transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+    }
+    .combat-totals-visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .combat-total-side {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .combat-breakdown {
+      font-family: 'Pirata One', Georgia, serif;
+      font-size: 1.5rem;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+    }
+    .combat-equals {
+      font-family: 'Pirata One', Georgia, serif;
+      font-size: 1.5rem;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+    }
+    .combat-score {
+      font-family: 'Pirata One', Georgia, serif;
+      font-size: 2.6rem;
+      font-weight: bold;
+      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+    }
+    .combat-score-vs {
+      font-family: 'Pirata One', Georgia, serif;
+      font-size: 1rem;
+      color: #c8b888;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+    }
+    .combat-total-attacker { color: #ff9a9a; }
+    .combat-total-defender { color: #9ac4ff; }
+    .combat-outcome {
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+    }
+    .combat-outcome-visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .combat-winner {
+      font-family: 'Pirata One', Georgia, serif;
+      font-size: 1.3rem;
+      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+    }
+    .combat-win { color: #4ade80; }
+    .combat-lose { color: #f87171; }
+  </style>
+</head>
+<body>
+  <h1>Combat Dice Duel Demo</h1>
+  <div class="demo-box" id="demoBox"></div>
+  <div class="controls">
+    <button onclick="runCombat('win')">Attacker Wins</button>
+    <button onclick="runCombat('lose')">Defender Wins</button>
+    <button onclick="runCombat('ship')">Ship Combat</button>
+  </div>
+
+  <script>
+    const PIP_LAYOUTS = {
+      1: [[1,1]],
+      2: [[0,2],[2,0]],
+      3: [[0,2],[1,1],[2,0]],
+      4: [[0,0],[0,2],[2,0],[2,2]],
+      5: [[0,0],[0,2],[1,1],[2,0],[2,2]],
+      6: [[0,0],[0,2],[1,0],[1,2],[2,0],[2,2]],
+    };
+    const FACE_ROTATIONS = {
+      1: 'rotateX(0deg) rotateY(0deg)',
+      2: 'rotateX(0deg) rotateY(-90deg)',
+      3: 'rotateX(-90deg) rotateY(0deg)',
+      4: 'rotateX(90deg) rotateY(0deg)',
+      5: 'rotateX(0deg) rotateY(90deg)',
+      6: 'rotateX(180deg) rotateY(0deg)',
+    };
+
+    function makePips(value) {
+      return PIP_LAYOUTS[value].map(p =>
+        `<div class="dice-pip" style="grid-row:${p[0]+1};grid-column:${p[1]+1}"></div>`
+      ).join('');
+    }
+
+    function makeCube(id) {
+      return `<div class="dice-scene"><div class="dice-cube dice-rolling" id="${id}">
+        <div class="dice-face dice-front"><div class="dice-pips">${makePips(1)}</div></div>
+        <div class="dice-face dice-back"><div class="dice-pips">${makePips(6)}</div></div>
+        <div class="dice-face dice-right"><div class="dice-pips">${makePips(2)}</div></div>
+        <div class="dice-face dice-left"><div class="dice-pips">${makePips(5)}</div></div>
+        <div class="dice-face dice-top"><div class="dice-pips">${makePips(3)}</div></div>
+        <div class="dice-face dice-bottom"><div class="dice-pips">${makePips(4)}</div></div>
+      </div></div>`;
+    }
+
+    let running = false;
+
+    function runCombat(type) {
+      if (running) return;
+      running = true;
+
+      const isShip = type === 'ship';
+      const attackerWins = type === 'win';
+      const attackDie = attackerWins ? 5 : 2;
+      const defenseDie = attackerWins ? 3 : 6;
+      const atkMod = 2;
+      const defMod = isShip ? 2 : 1;
+      const attackRoll = attackDie + atkMod;
+      const defenseRoll = defenseDie + defMod;
+      const attacker = 'Blackbeard';
+      const defender = isShip ? 'Red Beard' : 'Skull Island';
+      const defIcon = isShip ? '💣' : '💀';
+      const won = attackRoll > defenseRoll;
+
+      const box = document.getElementById('demoBox');
+      box.innerHTML = `
+        <div class="combat-overlay" id="overlay">
+          <div class="combat-duel-container">
+            <div class="combat-labels">
+              <span class="combat-label combat-label-attacker">${attacker}</span>
+              <span class="combat-vs">⚔️</span>
+              <span class="combat-label combat-label-defender">${defender}</span>
+            </div>
+            <div class="combat-dice-row">
+              <div class="combat-die combat-die-attacker">${makeCube('atkCube')}</div>
+              <div class="combat-vs-icon">VS</div>
+              <div class="combat-die combat-die-defender">${makeCube('defCube')}</div>
+            </div>
+            <div class="combat-totals" id="totals">
+              <div class="combat-total-side combat-total-attacker">
+                <span class="combat-breakdown">${attackDie} + ${atkMod} 💣</span>
+                <span class="combat-equals">=</span>
+                <span class="combat-score">${attackRoll}</span>
+              </div>
+              <span class="combat-score-vs">vs</span>
+              <div class="combat-total-side combat-total-defender">
+                <span class="combat-breakdown">${defenseDie} + ${defMod} ${defIcon}</span>
+                <span class="combat-equals">=</span>
+                <span class="combat-score">${defenseRoll}</span>
+              </div>
+            </div>
+            <div class="combat-outcome" id="outcome">
+              <span class="combat-winner ${won ? 'combat-win' : 'combat-lose'}">
+                ${won ? '⚔️ ' + attacker + ' wins!' : '🛡️ ' + defender + ' defends!'}
+              </span>
+            </div>
+          </div>
+        </div>`;
+
+      // Phase: landing at 500ms
+      setTimeout(() => {
+        const atk = document.getElementById('atkCube');
+        const def = document.getElementById('defCube');
+        atk.className = 'dice-cube dice-landed';
+        def.className = 'dice-cube dice-landed';
+        atk.style.transform = FACE_ROTATIONS[attackDie];
+        def.style.transform = FACE_ROTATIONS[defenseDie];
+      }, 500);
+
+      // Phase: result at 650ms
+      setTimeout(() => {
+        document.getElementById('totals').classList.add('combat-totals-visible');
+        document.getElementById('outcome').classList.add('combat-outcome-visible');
+      }, 650);
+
+      // Phase: fadeout at 3400ms (extra 2s hold for readability)
+      setTimeout(() => {
+        document.getElementById('overlay').classList.add('combat-overlay-fadeout');
+      }, 3400);
+
+      // Phase: cleanup at 3700ms
+      setTimeout(() => {
+        box.innerHTML = '';
+        running = false;
+      }, 3700);
+    }
+  </script>
+</body>
+</html>

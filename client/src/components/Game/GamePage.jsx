@@ -60,6 +60,7 @@ export default function GamePage() {
   const [deckShuffling, setDeckShuffling] = useState(false);
   const [animations, setAnimations] = useState([]);
   const [diceRollAnim, setDiceRollAnim] = useState(null);
+  const [combatAnim, setCombatAnim] = useState(null);
   const [needsJoin, setNeedsJoin] = useState(false);
   const [joinName, setJoinName] = useState('');
   const [error, setError] = useState('');
@@ -141,12 +142,11 @@ export default function GamePage() {
         if (result.type === 'island') {
           const won = result.won;
           addSystemMessage(`${result.attacker} ${won ? 'conquered' : 'failed to take'} an island! (${result.attackRoll} vs ${result.defenseRoll})`);
-          addAnimation('combat', won ? '\u2694\uFE0F' : '\uD83D\uDEE1\uFE0F', won ? `${result.attacker} conquered!` : `${result.attacker} repelled!`, result.location);
         } else {
           const won = result.attackerWon;
           addSystemMessage(`Ship combat! ${result.attacker} ${won ? 'won' : 'lost'}! (${result.attackRoll} vs ${result.defenseRoll})`);
-          addAnimation('combat', '\uD83D\uDCA5', won ? `${result.attacker} won!` : `${result.attacker} lost!`, result.location);
         }
+        setCombatAnim(result);
       }),
       on(EVENTS.TRADE_PROPOSED, (trade) => {
         setPendingTrade(trade);
@@ -328,6 +328,8 @@ export default function GamePage() {
       animations={animations}
       diceRollAnim={diceRollAnim}
       onDiceRollComplete={() => setDiceRollAnim(null)}
+      combatAnim={combatAnim}
+      onCombatComplete={() => setCombatAnim(null)}
       roomCode={code}
     />
   );

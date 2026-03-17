@@ -1392,14 +1392,21 @@ function executeIslandCombat(state, playerId, shipId, islandId) {
     return startCombatWithReroll(state, 'island', playerId, shipId, islandId);
   }
 
-  const attackRoll = rollDie(6) + ship.cannons;
-  const defenseRoll = rollDie(6) + island.skulls;
+  const attackDie = rollDie(6);
+  const defenseDie = rollDie(6);
+  const attackRoll = attackDie + ship.cannons;
+  const defenseRoll = defenseDie + island.skulls;
   ship.doneForTurn = true;
 
   if (!state.attackedThisTurn[shipId]) state.attackedThisTurn[shipId] = new Set();
   state.attackedThisTurn[shipId].add(islandId);
 
-  return resolveIslandCombatFromRolls(state, playerId, shipId, islandId, attackRoll, defenseRoll);
+  const result = resolveIslandCombatFromRolls(state, playerId, shipId, islandId, attackRoll, defenseRoll);
+  result.attackDie = attackDie;
+  result.defenseDie = defenseDie;
+  result.attackerCannons = ship.cannons;
+  result.defenderModifier = island.skulls;
+  return result;
 }
 
 function executeShipCombat(state, attackerId, attackerShipId, defenderShipId) {
@@ -1416,13 +1423,20 @@ function executeShipCombat(state, attackerId, attackerShipId, defenderShipId) {
     if (s) { defenderShip = s; break; }
   }
 
-  const attackRoll = rollDie(6) + attackerShip.cannons;
-  const defenseRoll = rollDie(6) + defenderShip.cannons;
+  const attackDie = rollDie(6);
+  const defenseDie = rollDie(6);
+  const attackRoll = attackDie + attackerShip.cannons;
+  const defenseRoll = defenseDie + defenderShip.cannons;
 
   if (!state.attackedThisTurn[attackerShipId]) state.attackedThisTurn[attackerShipId] = new Set();
   state.attackedThisTurn[attackerShipId].add(defenderShipId);
 
-  return resolveShipCombatFromRolls(state, attackerId, attackerShipId, defenderShipId, attackRoll, defenseRoll);
+  const result = resolveShipCombatFromRolls(state, attackerId, attackerShipId, defenderShipId, attackRoll, defenseRoll);
+  result.attackDie = attackDie;
+  result.defenseDie = defenseDie;
+  result.attackerCannons = attackerShip.cannons;
+  result.defenderModifier = defenderShip.cannons;
+  return result;
 }
 
 // === COMBAT REROLL FUNCTIONS ===
@@ -1501,6 +1515,11 @@ function finishCombatReroll(state) {
   } else {
     combat = resolveShipCombatFromRolls(state, pending.attackerId, pending.attackerShipId, pending.targetId, attackRoll, defenseRoll);
   }
+
+  combat.attackDie = pending.attackDie;
+  combat.defenseDie = pending.defenseDie;
+  combat.attackerCannons = pending.attackerCannons;
+  combat.defenderModifier = pending.defenderModifier;
 
   const combatType = pending.type;
   state.pendingCombatReroll = null;

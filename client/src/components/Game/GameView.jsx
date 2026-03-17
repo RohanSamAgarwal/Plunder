@@ -4,6 +4,7 @@ import { drawBoard, canvasToGrid, getValidMoves, calculateLayout } from '../../g
 import ActionPanel from './ActionPanel';
 import ChatLog from './ChatLog';
 import DiceRoll3D from './DiceRoll3D';
+import CombatAnimation from './CombatAnimation';
 
 const SIDEBAR_W = 400;
 const TOP_BAR_H = 52;
@@ -33,7 +34,7 @@ const RESOURCE_META = {
 };
 const EMPTY_RESOURCES = { wood: 0, iron: 0, rum: 0, gold: 0 };
 
-export default function GameView({ gameState, playerInfo, messages, pendingTrade, pendingTreaty, pendingAttackBribe, attackBribeDecision, drawnCard, onDismissCard, deckShuffling, animations, diceRollAnim, onDiceRollComplete, roomCode }) {
+export default function GameView({ gameState, playerInfo, messages, pendingTrade, pendingTreaty, pendingAttackBribe, attackBribeDecision, drawnCard, onDismissCard, deckShuffling, animations, diceRollAnim, onDiceRollComplete, combatAnim, onCombatComplete, roomCode }) {
   const { emit } = useSocketContext();
   const canvasRef = useRef(null);
   const boardContainerRef = useRef(null);
@@ -857,6 +858,13 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
                 isReroll={diceRollAnim.isReroll}
                 playerName={diceRollAnim.playerName}
                 onComplete={onDiceRollComplete}
+              />
+            )}
+            {/* Combat dice duel overlay */}
+            {combatAnim && (
+              <CombatAnimation
+                combatResult={combatAnim}
+                onComplete={onCombatComplete}
               />
             )}
             {/* Animation overlays - positioned relative to rendered canvas size */}

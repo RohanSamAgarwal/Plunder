@@ -374,6 +374,7 @@ io.on('connection', (socket) => {
       io.to(found.room.code).emit(EVENTS.COMBAT_RESULT, {
         type: 'island',
         attacker: found.player.name,
+        defender: island?.owner ? state.players[island.owner]?.name || 'Island' : 'Island',
         location: island?.port || null,
         ...result,
       });
@@ -408,11 +409,16 @@ io.on('connection', (socket) => {
       callback?.({ success: true, pendingReroll: true });
     } else {
       callback?.(result);
-      // Find attacker ship position for the animation location
+      // Find attacker ship position and defender name for the animation
       const attackerShip = state.players[found.player.id]?.ships?.find(s => s.id === attackerShipId);
+      let defenderName = 'Ship';
+      for (const p of Object.values(state.players)) {
+        if (p.ships.some(s => s.id === defenderShipId)) { defenderName = p.name; break; }
+      }
       io.to(found.room.code).emit(EVENTS.COMBAT_RESULT, {
         type: 'ship',
         attacker: found.player.name,
+        defender: defenderName,
         location: attackerShip?.position || null,
         ...result,
       });

@@ -230,6 +230,184 @@ body {
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
 }
 
+/* ── Combat Dice Duel Animation ── */
+
+.combat-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.35);
+  animation: dice-overlay-in 0.2s ease-out;
+}
+
+.combat-overlay-fadeout {
+  opacity: 0;
+  transition: opacity 0.3s ease-out;
+}
+
+.combat-duel-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.combat-labels {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-family: 'Pirata One', 'Georgia', serif;
+  font-size: 1.1rem;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
+}
+
+.combat-label-attacker {
+  color: #ff6b6b;
+}
+
+.combat-label-defender {
+  color: #6bb5ff;
+}
+
+.combat-vs {
+  font-size: 1.3rem;
+}
+
+.combat-dice-row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.combat-die {
+  position: relative;
+}
+
+.combat-die .dice-scene {
+  width: 70px;
+  height: 70px;
+}
+
+.combat-die .dice-cube {
+  width: 70px;
+  height: 70px;
+}
+
+.combat-die .dice-face {
+  width: 70px;
+  height: 70px;
+}
+
+.combat-die .dice-face {
+  transform: none;
+}
+
+.combat-die .dice-front  { transform: translateZ(35px); }
+.combat-die .dice-back   { transform: rotateY(180deg) translateZ(35px); }
+.combat-die .dice-right  { transform: rotateY(90deg)  translateZ(35px); }
+.combat-die .dice-left   { transform: rotateY(-90deg) translateZ(35px); }
+.combat-die .dice-top    { transform: rotateX(90deg)  translateZ(35px); }
+.combat-die .dice-bottom { transform: rotateX(-90deg) translateZ(35px); }
+
+.combat-die-attacker .dice-scene {
+  filter: drop-shadow(0 0 8px rgba(255, 80, 80, 0.5));
+}
+
+.combat-die-defender .dice-scene {
+  filter: drop-shadow(0 0 8px rgba(80, 150, 255, 0.5));
+}
+
+.combat-vs-icon {
+  font-family: 'Pirata One', 'Georgia', serif;
+  font-size: 1.5rem;
+  color: #d4a017;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
+  font-weight: bold;
+}
+
+.combat-totals {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+}
+
+.combat-totals-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.combat-total-side {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.combat-breakdown {
+  font-family: 'Pirata One', 'Georgia', serif;
+  font-size: 1.5rem;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+}
+
+.combat-equals {
+  font-family: 'Pirata One', 'Georgia', serif;
+  font-size: 1.5rem;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+}
+
+.combat-score {
+  font-family: 'Pirata One', 'Georgia', serif;
+  font-size: 2.6rem;
+  font-weight: bold;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+}
+
+.combat-score-vs {
+  font-family: 'Pirata One', 'Georgia', serif;
+  font-size: 1rem;
+  color: #c8b888;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+}
+
+.combat-total-attacker {
+  color: #ff9a9a;
+}
+
+.combat-total-defender {
+  color: #9ac4ff;
+}
+
+.combat-outcome {
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+}
+
+.combat-outcome-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.combat-winner {
+  font-family: 'Pirata One', 'Georgia', serif;
+  font-size: 1.3rem;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+}
+
+.combat-win {
+  color: #4ade80;
+}
+
+.combat-lose {
+  color: #f87171;
+}
+
 /* Player color indicators */
 .player-color-red { color: #ef4444; }
 .player-color-blue { color: #3b82f6; }
