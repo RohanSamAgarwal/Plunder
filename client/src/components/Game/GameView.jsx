@@ -9,6 +9,7 @@ import BuildAnimation from './BuildAnimation';
 import ShipLaunchAnimation from './ShipLaunchAnimation';
 import ShipMoveAnimation from './ShipMoveAnimation';
 import StormAnimation from './StormAnimation';
+import EventAnimation from './EventAnimation';
 import { useAnimSpeed } from '../../App';
 
 const SIDEBAR_W = 400;
@@ -39,7 +40,7 @@ const RESOURCE_META = {
 };
 const EMPTY_RESOURCES = { wood: 0, iron: 0, rum: 0, gold: 0 };
 
-export default function GameView({ gameState, playerInfo, messages, pendingTrade, pendingTreaty, pendingAttackBribe, attackBribeDecision, drawnCard, onDismissCard, deckShuffling, animations, diceRollAnim, onDiceRollComplete, combatAnim, onCombatComplete, buildAnim, onBuildComplete, shipLaunchAnim, onShipLaunchComplete, shipMoveAnim, onShipMoveComplete, stormAnim, onStormComplete, roomCode }) {
+export default function GameView({ gameState, playerInfo, messages, pendingTrade, pendingTreaty, pendingAttackBribe, attackBribeDecision, drawnCard, onDismissCard, deckShuffling, animations, diceRollAnim, onDiceRollComplete, combatAnim, onCombatComplete, buildAnim, onBuildComplete, shipLaunchAnim, onShipLaunchComplete, shipMoveAnim, onShipMoveComplete, stormAnim, onStormComplete, eventAnim, onEventComplete, roomCode }) {
   const { emit } = useSocketContext();
   const { animSpeed, setAnimSpeed } = useAnimSpeed();
   const canvasRef = useRef(null);
@@ -933,6 +934,16 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
                 canvasW={canvasW}
                 canvasH={canvasH}
                 onComplete={onStormComplete}
+              />
+            )}
+            {/* Event animation overlay (turn transition, trade, treaty, etc.) */}
+            {eventAnim && (
+              <EventAnimation
+                icon={eventAnim.icon}
+                title={eventAnim.title}
+                subtitle={eventAnim.subtitle}
+                color={eventAnim.color}
+                onComplete={onEventComplete}
               />
             )}
             {/* Animation overlays - positioned relative to rendered canvas size */}

@@ -67,6 +67,7 @@ export default function GamePage() {
   const [shipLaunchAnim, setShipLaunchAnim] = useState(null);
   const [shipMoveAnim, setShipMoveAnim] = useState(null);
   const [stormAnim, setStormAnim] = useState(null);
+  const [eventAnim, setEventAnim] = useState(null);
   const [needsJoin, setNeedsJoin] = useState(false);
   const [joinName, setJoinName] = useState('');
   const [error, setError] = useState('');
@@ -128,12 +129,13 @@ export default function GamePage() {
       on(EVENTS.CHAT_BROADCAST, (msg) => {
         setMessages(prev => [...prev, msg]);
       }),
-      on(EVENTS.TURN_ENDED, ({ nextPlayer }) => {
+      on(EVENTS.TURN_ENDED, ({ nextPlayer, nextPlayerName }) => {
         // Clear pending modals on turn end
         setPendingTrade(null);
         setPendingTreaty(null);
         setPendingAttackBribe(null);
         setAttackBribeDecision(null);
+        setEventAnim({ icon: '🏴‍☠️', title: `${nextPlayerName || 'Next'}'s Turn`, color: '#d4a017' });
       }),
       on(EVENTS.DIE_ROLLED, ({ playerId, playerName, roll, totalMovePoints, reroll, stormMoved }) => {
         if (stormMoved) addSystemMessage('The storm has moved!');
@@ -153,6 +155,13 @@ export default function GamePage() {
           addSystemMessage(`Ship combat! ${result.attacker} ${won ? 'won' : 'lost'}! (${result.attackRoll} vs ${result.defenseRoll})`);
         }
         setCombatAnim(result);
+        // Queue follow-up event animation for island capture or ship sunk
+        if (result.type === 'island' && result.won) {
+          setTimeout(() => setEventAnim({ icon: '🏴‍☠️', title: 'Island Captured!', subtitle: `${result.attacker} seized the island`, color: '#4ade80' }), 3800);
+        } else if (result.sunk) {
+          const sunkName = result.attackerWon ? result.defender : result.attacker;
+          setTimeout(() => setEventAnim({ icon: '💀', title: 'Ship Sunk!', subtitle: `${sunkName}'s ship was destroyed`, color: '#f87171' }), 3800);
+        }
       }),
       on(EVENTS.TRADE_PROPOSED, (trade) => {
         setPendingTrade(trade);
@@ -172,7 +181,12 @@ export default function GamePage() {
         } else {
           addSystemMessage(data.accepted ? 'Trade completed!' : 'Trade declined.');
         }
-        addAnimation('trade', data.accepted ? '\uD83E\uDD1D' : '\u274C', data.accepted ? 'Trade completed!' : 'Trade declined', null, data.accepted ? 2500 : 2000);
+        setEventAnim({
+          icon: data.accepted ? '🤝' : '❌',
+          title: data.accepted ? 'Trade Completed!' : 'Trade Declined',
+          subtitle: data.fromName && data.toName ? `${data.fromName} & ${data.toName}` : undefined,
+          color: data.accepted ? '#4ade80' : '#f87171',
+        });
       }),
       on(EVENTS.BUILT, ({ playerName, buildType, location }) => {
         const label = buildType === 'ship' ? 'a ship' : buildType === 'plunderPoint' ? 'a plunder point' : `a ${buildType}`;
@@ -204,6 +218,11 @@ export default function GamePage() {
       on(EVENTS.TREATY_RESOLVED, ({ accepted, proposerId, targetId }) => {
         setPendingTreaty(null);
         addSystemMessage(accepted ? 'Treaty agreed! No attacks this turn.' : 'Treaty declined.');
+        setEventAnim({
+          icon: accepted ? '🕊️' : '⚔️',
+          title: accepted ? 'Treaty Agreed!' : 'Treaty Declined',
+          color: accepted ? '#4ade80' : '#f87171',
+        });
       }),
       on(EVENTS.ATTACK_BRIBE_PENDING, (data) => {
         setPendingAttackBribe(data);
@@ -217,12 +236,15 @@ export default function GamePage() {
         setAttackBribeDecision(null);
         if (data.attackCancelled && data.bribe) {
           addSystemMessage(`${data.attackerName} accepted a bribe and cancelled the attack.`);
+          setEventAnim({ icon: '💰', title: 'Bribe Accepted!', subtitle: 'Attack cancelled', color: '#eab308' });
         } else if (data.attackCancelled) {
           addSystemMessage(`${data.attackerName} cancelled the attack.`);
         } else if (data.outcome === 'bribe_accepted_and_attacked') {
           addSystemMessage(`${data.attackerName} accepted the bribe but attacked anyway!`);
+          setEventAnim({ icon: '🏴‍☠️', title: 'Betrayal!', subtitle: `${data.attackerName} took the bribe AND attacked!`, color: '#f87171' });
         } else if (data.outcome === 'bribe_rejected') {
           addSystemMessage(`${data.attackerName} rejected the bribe and attacked!`);
+          setEventAnim({ icon: '⚔️', title: 'Bribe Rejected!', subtitle: 'Prepare for battle!', color: '#f87171' });
         }
       }),
     ];
@@ -355,6 +377,8 @@ export default function GamePage() {
       onShipMoveComplete={() => setShipMoveAnim(null)}
       stormAnim={stormAnim}
       onStormComplete={() => setStormAnim(null)}
+      eventAnim={eventAnim}
+      onEventComplete={() => setEventAnim(null)}
       roomCode={code}
     />
   );

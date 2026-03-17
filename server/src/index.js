@@ -614,7 +614,8 @@ io.on('connection', (socket) => {
     if (result.endsTurn) {
       const endResult = endTurn(state);
       broadcastGameState(found.room);
-      io.to(found.room.code).emit(EVENTS.TURN_ENDED, endResult);
+      const nextName = state.players[endResult.nextPlayer]?.name || 'Unknown';
+      io.to(found.room.code).emit(EVENTS.TURN_ENDED, { ...endResult, nextPlayerName: nextName });
     }
   });
 
@@ -924,7 +925,8 @@ io.on('connection', (socket) => {
     broadcastGameState(found.room);
     callback?.(result);
 
-    io.to(found.room.code).emit(EVENTS.TURN_ENDED, result);
+    const nextPlayerName = state.players[result.nextPlayer]?.name || 'Unknown';
+    io.to(found.room.code).emit(EVENTS.TURN_ENDED, { ...result, nextPlayerName });
   });
 
   // --- DISCONNECT ---
