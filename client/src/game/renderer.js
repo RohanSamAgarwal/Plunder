@@ -607,7 +607,7 @@ function drawStaticLayer(ctx, canvas, gameState, layout) {
     drawSkullBadge(ctx, tileCX, tileCY, island.skulls, ts);
 
     if (island.owner && players[island.owner]) {
-      drawOwnerFlag(ctx, tileCX + ts * 0.35, tileCY - ts * 0.35, SHIP_COLORS[players[island.owner].color], ts);
+      drawOwnerFlag(ctx, tileCX + ts * 0.35, tileCY - ts * 0.35, SHIP_COLORS[players[island.owner].color], ts, bestTile.row, bestTile.col);
     }
   }
 
@@ -1534,7 +1534,7 @@ function drawSkullIcon(ctx, cx, cy, size) {
   ctx.restore();
 }
 
-function drawOwnerFlag(ctx, x, y, color, ts) {
+function drawOwnerFlag(ctx, x, y, color, ts, row, col) {
   const poleH = Math.round(ts * 0.35);
   const flagW = Math.round(ts * 0.2);
   const flagH = Math.round(ts * 0.15);
@@ -1547,11 +1547,21 @@ function drawOwnerFlag(ctx, x, y, color, ts) {
   ctx.lineTo(x, y + poleH);
   ctx.stroke();
 
-  // Triangular flag with wave
+  // Wind flutter — synced with wave shimmer direction
+  const windTime = Date.now() * 0.0008;
+  const windPhase = (col || 0) * 0.5 + (row || 0) * 0.3;
+  const flutter = Math.sin(windTime * 1.5 + windPhase) * 0.25; // -0.25 to 0.25
+
+  // Triangular flag with animated wave
   ctx.fillStyle = color;
   ctx.beginPath();
   ctx.moveTo(x, y);
-  ctx.quadraticCurveTo(x - flagW * 0.6, y + flagH * 0.35, x - flagW, y + flagH * 0.4);
+  ctx.quadraticCurveTo(
+    x - flagW * (0.6 + flutter * 0.4),
+    y + flagH * (0.35 + flutter * 0.15),
+    x - flagW * (1.0 + flutter * 0.3),
+    y + flagH * (0.4 + flutter * 0.1)
+  );
   ctx.lineTo(x, y + flagH);
   ctx.closePath();
   ctx.fill();
@@ -1747,6 +1757,10 @@ function drawShip(ctx, ship, color, isSelected, ts, gp) {
   // ── Sail badges (LEFT side) ──
   const badgeR = ts * 0.19;
   const badgeLX = cx - hullHW - badgeR * 0.4;
+  // Wind flutter for sail icons — synced with wave shimmer
+  const sailWindTime = Date.now() * 0.0008;
+  const sailWindPhase = ship.position.col * 0.5 + ship.position.row * 0.3;
+  const sailFlutter = Math.sin(sailWindTime * 1.5 + sailWindPhase) * 0.15;
   for (let m = 0; m < 2; m++) {
     const by = cy - ts * 0.12 + m * (badgeR * 2.2);
     if (m < ship.masts) {
@@ -1757,7 +1771,7 @@ function drawShip(ctx, ship, color, isSelected, ts, gp) {
       ctx.arc(badgeLX, by, badgeR, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
-      // Sail icon
+      // Sail icon with flutter
       const iconS = badgeR * 0.88;
       ctx.strokeStyle = '#c8b880';
       ctx.lineWidth = Math.max(1.8, ts * 0.026);
@@ -1765,11 +1779,22 @@ function drawShip(ctx, ship, color, isSelected, ts, gp) {
       ctx.moveTo(badgeLX - iconS * 0.18, by + iconS * 0.7);
       ctx.lineTo(badgeLX - iconS * 0.18, by - iconS * 0.8);
       ctx.stroke();
+      // Sail triangle with wind curve
+      const sailTipX = badgeLX + iconS * (0.8 + sailFlutter * 0.5);
+      const sailTipY = by + iconS * (0.15 + sailFlutter * 0.1);
       ctx.fillStyle = '#ffffff';
       ctx.beginPath();
       ctx.moveTo(badgeLX - iconS * 0.18, by - iconS * 0.7);
-      ctx.lineTo(badgeLX + iconS * 0.8, by + iconS * 0.15);
-      ctx.lineTo(badgeLX - iconS * 0.18, by + iconS * 0.55);
+      ctx.quadraticCurveTo(
+        sailTipX + iconS * sailFlutter * 0.3,
+        by - iconS * 0.2,
+        sailTipX, sailTipY
+      );
+      ctx.quadraticCurveTo(
+        badgeLX + iconS * (0.3 + sailFlutter * 0.2),
+        by + iconS * 0.5,
+        badgeLX - iconS * 0.18, by + iconS * 0.55
+      );
       ctx.closePath();
       ctx.fill();
     }

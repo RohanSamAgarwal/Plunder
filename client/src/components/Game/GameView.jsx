@@ -4,12 +4,14 @@ import { drawBoard, canvasToGrid, getValidMoves, calculateLayout } from '../../g
 import ActionPanel from './ActionPanel';
 import ChatLog from './ChatLog';
 import DiceRoll3D from './DiceRoll3D';
+import CannonFireAnimation from './CannonFireAnimation';
 import CombatAnimation from './CombatAnimation';
 import BuildAnimation from './BuildAnimation';
 import ShipLaunchAnimation from './ShipLaunchAnimation';
 import ShipMoveAnimation from './ShipMoveAnimation';
 import StormAnimation from './StormAnimation';
 import EventAnimation from './EventAnimation';
+import ResourceDrawAnimation from './ResourceDrawAnimation';
 import GameStartAnimation from './GameStartAnimation';
 import GameOverAnimation from './GameOverAnimation';
 import { useAnimSpeed } from '../../App';
@@ -42,7 +44,7 @@ const RESOURCE_META = {
 };
 const EMPTY_RESOURCES = { wood: 0, iron: 0, rum: 0, gold: 0 };
 
-export default function GameView({ gameState, playerInfo, messages, pendingTrade, pendingTreaty, pendingAttackBribe, attackBribeDecision, drawnCard, onDismissCard, deckShuffling, animations, diceRollAnim, onDiceRollComplete, combatAnim, onCombatComplete, buildAnim, onBuildComplete, shipLaunchAnim, onShipLaunchComplete, shipMoveAnim, onShipMoveComplete, stormAnim, onStormComplete, eventAnim, onEventComplete, gameStartAnim, onGameStartComplete, gameOverAnim, onGameOverComplete, roomCode }) {
+export default function GameView({ gameState, playerInfo, messages, pendingTrade, pendingTreaty, pendingAttackBribe, attackBribeDecision, drawnCard, onDismissCard, deckShuffling, animations, diceRollAnim, onDiceRollComplete, cannonFireAnim, onCannonFireComplete, combatAnim, onCombatComplete, buildAnim, onBuildComplete, shipLaunchAnim, onShipLaunchComplete, shipMoveAnim, onShipMoveComplete, stormAnim, onStormComplete, eventAnim, onEventComplete, resourceDrawAnim, onResourceDrawComplete, gameStartAnim, onGameStartComplete, gameOverAnim, onGameOverComplete, roomCode }) {
   const { emit } = useSocketContext();
   const { animSpeed, setAnimSpeed } = useAnimSpeed();
   const canvasRef = useRef(null);
@@ -223,7 +225,8 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
   // Update valid moves when ship selected
   useEffect(() => {
     if (selectedShip && gameState && isMyTurn && turnPhase === 'perform_actions') {
-      const moves = getValidMoves(gameState, selectedShip, gameState.movePointsRemaining);
+      const bonus = selectedShip.jettisonBonus || 0;
+      const moves = getValidMoves(gameState, selectedShip, gameState.movePointsRemaining + bonus);
       setValidMoves(moves);
     } else {
       setValidMoves([]);
@@ -501,41 +504,44 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
 
       {/* ═══ Deck Shuffling Overlay ═══ */}
       {deckShuffling && (
-        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/60">
-          <div className="text-center">
-            <div className="relative w-32 h-20 mx-auto mb-4">
-              {[0, 1, 2, 3, 4].map(i => (
+        <div className="deck-shuffle-overlay">
+          <div className="deck-shuffle-content">
+            <div className="deck-shuffle-cards">
+              {[0, 1, 2, 3, 4, 5].map(i => (
                 <div key={i}
-                  className="absolute w-14 h-20 rounded-md border-2 border-pirate-gold/60 bg-pirate-brown shadow-lg"
+                  className="deck-shuffle-card"
                   style={{
-                    left: '50%',
-                    top: 0,
-                    transform: `translateX(-50%)`,
-                    animation: `shuffleCard${i % 2 === 0 ? 'Left' : 'Right'} 0.8s ease-in-out ${i * 0.15}s infinite`,
-                    zIndex: 5 - i,
+                    animationDelay: `${i * 0.12}s`,
+                    animationName: i % 2 === 0 ? 'shuffleFanLeft' : 'shuffleFanRight',
+                    zIndex: 6 - i,
                   }}>
-                  <div className="w-full h-full flex items-center justify-center text-pirate-gold text-xl font-pirate">
-                    X
+                  {/* Card back design */}
+                  <div className="deck-card-back">
+                    <div className="deck-card-border">
+                      <div className="deck-card-inner">
+                        {/* Skull & crossbones */}
+                        <div className="deck-card-skull">💀</div>
+                        <div className="deck-card-swords">⚔️</div>
+                        {/* Corner gems */}
+                        <span className="deck-card-gem deck-card-gem-tl">◆</span>
+                        <span className="deck-card-gem deck-card-gem-tr">◆</span>
+                        <span className="deck-card-gem deck-card-gem-bl">◆</span>
+                        <span className="deck-card-gem deck-card-gem-br">◆</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               ))}
             </div>
-            <p className="text-pirate-gold font-pirate text-xl animate-pulse">
+            <p className="deck-shuffle-text">
               Shuffling the treasure deck...
             </p>
+            <div className="deck-shuffle-sparkles">
+              {'✨💰✨'.split('').map((e, i) => (
+                <span key={i} className="deck-shuffle-sparkle" style={{ animationDelay: `${i * 0.3}s` }}>{e}</span>
+              ))}
+            </div>
           </div>
-          <style>{`
-            @keyframes shuffleCardLeft {
-              0%, 100% { transform: translateX(-50%) rotate(0deg); }
-              25% { transform: translateX(-130%) rotate(-15deg); }
-              50% { transform: translateX(-50%) rotate(0deg); }
-            }
-            @keyframes shuffleCardRight {
-              0%, 100% { transform: translateX(-50%) rotate(0deg); }
-              25% { transform: translateX(30%) rotate(15deg); }
-              50% { transform: translateX(-50%) rotate(0deg); }
-            }
-          `}</style>
         </div>
       )}
 
@@ -886,6 +892,18 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
                 onComplete={onDiceRollComplete}
               />
             )}
+            {/* Cannon fire animation (plays before dice) */}
+            {cannonFireAnim && cannonFireAnim.attackerLocation && cannonFireAnim.defenderLocation && (
+              <CannonFireAnimation
+                attackerPos={cannonFireAnim.attackerLocation}
+                defenderPos={cannonFireAnim.defenderLocation}
+                cannons={cannonFireAnim.attackerCannons || 1}
+                layout={zoomedLayout}
+                canvasW={canvasW}
+                canvasH={canvasH}
+                onComplete={onCannonFireComplete}
+              />
+            )}
             {/* Combat dice duel overlay */}
             {combatAnim && (
               <CombatAnimation
@@ -939,6 +957,7 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
               <ShipMoveAnimation
                 path={shipMoveAnim.path}
                 playerColor={shipMoveAnim.playerColor}
+                ship={shipMoveAnim.ship}
                 layout={zoomedLayout}
                 canvasW={canvasW}
                 canvasH={canvasH}
@@ -963,6 +982,16 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
                 subtitle={eventAnim.subtitle}
                 color={eventAnim.color}
                 onComplete={onEventComplete}
+              />
+            )}
+            {/* Resource draw animation */}
+            {resourceDrawAnim && (
+              <ResourceDrawAnimation
+                playerName={resourceDrawAnim.playerName}
+                drawn={resourceDrawAnim.drawn}
+                count={resourceDrawAnim.count}
+                isLocal={resourceDrawAnim.isLocal}
+                onComplete={onResourceDrawComplete}
               />
             )}
             {/* Game start animation */}

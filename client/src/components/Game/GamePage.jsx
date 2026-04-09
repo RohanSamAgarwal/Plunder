@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useSocketContext, usePlayerContext } from '../../App';
+import { useSocketContext, usePlayerContext, useAnimSpeed } from '../../App';
 import Lobby from './Lobby';
 import GameView from './GameView';
 
@@ -51,6 +51,7 @@ export default function GamePage() {
   const navigate = useNavigate();
   const { emit, on, connected } = useSocketContext();
   const { playerInfo, setPlayerInfo } = usePlayerContext();
+  const { animSpeed } = useAnimSpeed();
 
   const [room, setRoom] = useState(null);
   const [gameState, setGameState] = useState(null);
@@ -63,12 +64,15 @@ export default function GamePage() {
   const [deckShuffling, setDeckShuffling] = useState(false);
   const [animations, setAnimations] = useState([]);
   const [diceRollAnim, setDiceRollAnim] = useState(null);
+  const [cannonFireAnim, setCannonFireAnim] = useState(null);
   const [combatAnim, setCombatAnim] = useState(null);
+  const pendingCombatRef = useRef(null);
   const [buildAnim, setBuildAnim] = useState(null);
   const [shipLaunchAnim, setShipLaunchAnim] = useState(null);
   const [shipMoveAnim, setShipMoveAnim] = useState(null);
   const [stormAnim, setStormAnim] = useState(null);
   const [eventAnim, setEventAnim] = useState(null);
+  const [resourceDrawAnim, setResourceDrawAnim] = useState(null);
   const [gameStartAnim, setGameStartAnim] = useState(false);
   const [gameOverAnim, setGameOverAnim] = useState(null);
   const [needsJoin, setNeedsJoin] = useState(false);
@@ -176,13 +180,24 @@ export default function GamePage() {
           const won = result.attackerWon;
           addSystemMessage(`Ship combat! ${result.attacker} ${won ? 'won' : 'lost'}! (${result.attackRoll} vs ${result.defenseRoll})`);
         }
-        setCombatAnim(result);
+        // Two-phase: cannon fire first, then dice overlay
+        if (result.attackerLocation && result.defenderLocation) {
+          pendingCombatRef.current = result;
+          setCannonFireAnim(result);
+        } else {
+          // No positions available (bribe/reroll path) — skip cannon fire
+          setCombatAnim(result);
+        }
         // Queue follow-up event animation for island capture or ship sunk
+        // Delay accounts for cannon fire (~1500ms×m) + dice (~3800ms×m)
+        const sm = animSpeed / 3; // speed multiplier
+        const cannonDelay = (result.attackerLocation && result.defenderLocation) ? 1500 * sm : 0;
+        const diceDelay = 3800 * sm;
         if (result.type === 'island' && result.won) {
-          setTimeout(() => setEventAnim({ icon: '🏴‍☠️', title: 'Island Captured!', subtitle: `${result.attacker} seized the island`, color: '#4ade80' }), 3800);
+          setTimeout(() => setEventAnim({ icon: '🏴‍☠️', title: 'Island Captured!', subtitle: `${result.attacker} seized the island`, color: '#4ade80' }), cannonDelay + diceDelay);
         } else if (result.sunk) {
           const sunkName = result.attackerWon ? result.defender : result.attacker;
-          setTimeout(() => setEventAnim({ icon: '💀', title: 'Ship Sunk!', subtitle: `${sunkName}'s ship was destroyed`, color: '#f87171' }), 3800);
+          setTimeout(() => setEventAnim({ icon: '💀', title: 'Ship Sunk!', subtitle: `${sunkName}'s ship was destroyed`, color: '#f87171' }), cannonDelay + diceDelay);
         }
       }),
       on(EVENTS.TRADE_PROPOSED, (trade) => {
@@ -225,8 +240,8 @@ export default function GamePage() {
           }
         }
       }),
-      on(EVENTS.SHIP_MOVED, ({ playerName, playerColor, path, arrivedAtPort }) => {
-        setShipMoveAnim({ playerName, playerColor, path });
+      on(EVENTS.SHIP_MOVED, ({ playerName, playerColor, path, arrivedAtPort, ship }) => {
+        setShipMoveAnim({ playerName, playerColor, path, ship });
         if (arrivedAtPort) {
           const pathLen = path?.length || 0;
           setTimeout(() => setEventAnim({ icon: '⚓', title: 'Port Arrival', subtitle: `${playerName} docked at port`, color: '#60a5fa' }), pathLen * 180 + 300);
@@ -236,9 +251,18 @@ export default function GamePage() {
         addSystemMessage('⚡ The storm has moved!');
         setStormAnim({ center });
       }),
-      on(EVENTS.RESOURCES_DRAWN, ({ playerName, drawn }) => {
-        const summary = Object.entries(drawn || {}).filter(([, v]) => v > 0).map(([k, v]) => `${v} ${k}`).join(', ');
-        if (summary) addSystemMessage(`${playerName} drew ${summary}`);
+      on(EVENTS.RESOURCES_DRAWN, ({ playerName, playerId, drawn, count }) => {
+        const isLocal = playerId === playerInfo?.playerId;
+        if (isLocal && drawn) {
+          // Local player: show detailed resource breakdown in chat
+          const counts = {};
+          drawn.forEach(r => { counts[r] = (counts[r] || 0) + 1; });
+          const summary = Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(', ');
+          if (summary) addSystemMessage(`You drew ${summary}`);
+        } else {
+          addSystemMessage(`${playerName} drew ${count} resource card${count !== 1 ? 's' : ''}`);
+        }
+        setResourceDrawAnim({ playerName, drawn: drawn || null, count: count || 0, isLocal });
       }),
       on(EVENTS.TREASURE_COLLECTED, ({ playerName, card }) => {
         addSystemMessage(`${playerName} found treasure: ${card.description}`);
@@ -403,6 +427,14 @@ export default function GamePage() {
       animations={animations}
       diceRollAnim={diceRollAnim}
       onDiceRollComplete={() => setDiceRollAnim(null)}
+      cannonFireAnim={cannonFireAnim}
+      onCannonFireComplete={() => {
+        setCannonFireAnim(null);
+        if (pendingCombatRef.current) {
+          setCombatAnim(pendingCombatRef.current);
+          pendingCombatRef.current = null;
+        }
+      }}
       combatAnim={combatAnim}
       onCombatComplete={() => setCombatAnim(null)}
       buildAnim={buildAnim}
@@ -415,6 +447,8 @@ export default function GamePage() {
       onStormComplete={() => setStormAnim(null)}
       eventAnim={eventAnim}
       onEventComplete={() => setEventAnim(null)}
+      resourceDrawAnim={resourceDrawAnim}
+      onResourceDrawComplete={() => setResourceDrawAnim(null)}
       gameStartAnim={gameStartAnim}
       onGameStartComplete={() => setGameStartAnim(false)}
       gameOverAnim={gameOverAnim}

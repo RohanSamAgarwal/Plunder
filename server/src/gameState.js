@@ -61,6 +61,7 @@ export function createGameState(players, playerCount, settings = {}) {
       ppToWin: settings.ppToWin || WIN_POINTS,
       tradeKnowledge: settings.tradeKnowledge || TRADE_KNOWLEDGE.OPEN,
       rerollMode: settings.rerollMode || REROLL_MODES.NONE,
+      lightenTheLoad: settings.lightenTheLoad !== undefined ? settings.lightenTheLoad : true,
     },
   };
 
@@ -304,6 +305,7 @@ function createShip(ownerId, position) {
     cannons: 0,
     movesUsed: 0,
     doneForTurn: false,
+    jettisonBonus: 0,
   };
 }
 
@@ -671,7 +673,9 @@ export function moveShip(state, playerId, shipId, path) {
   if (ship.doneForTurn) return { error: 'Ship is done for this turn' };
 
   const moveCost = path.length;
-  if (moveCost > state.movePointsRemaining) {
+  const bonus = ship.jettisonBonus || 0;
+  const totalAvailable = state.movePointsRemaining + bonus;
+  if (moveCost > totalAvailable) {
     return { error: 'Not enough move points' };
   }
 
@@ -723,10 +727,12 @@ export function moveShip(state, playerId, shipId, path) {
   // Save original position before applying movement (for storm cancel)
   const originalPosition = { ...ship.position };
 
-  // Apply movement
+  // Apply movement — consume from global pool first, then jettison bonus
   ship.position = current;
   ship.movesUsed += moveCost;
-  state.movePointsRemaining -= moveCost;
+  const fromGlobal = Math.min(moveCost, state.movePointsRemaining);
+  state.movePointsRemaining -= fromGlobal;
+  ship.jettisonBonus = Math.max(0, bonus - (moveCost - fromGlobal));
 
   // If storm cost is owed, set pending state for player to choose which resources to pay
   if (stormCost > 0) {
@@ -752,6 +758,30 @@ export function moveShip(state, playerId, shipId, path) {
   }
 
   return { success: true, newPosition: current, stormCost, treasuresOnPath };
+}
+
+// Lightening the Load: jettison cannons for bonus movement
+export function jettisonCannons(state, playerId, shipId, count) {
+  if (!state.settings.lightenTheLoad) return { error: 'Lightening the Load is disabled' };
+  if (state.turnPhase !== TURN_PHASES.PERFORM_ACTIONS) return { error: 'Can only jettison during action phase' };
+  if (state.turnOrder[state.currentPlayerIndex] !== playerId) return { error: 'Not your turn' };
+  if (state.pendingStormCost) return { error: 'Must resolve storm cost first' };
+  if (state.pendingAttack) return { error: 'Must resolve pending attack first' };
+
+  const player = state.players[playerId];
+  if (!player) return { error: 'Player not found' };
+
+  const ship = player.ships.find(s => s.id === shipId);
+  if (!ship) return { error: 'Ship not found' };
+
+  if (count !== 1 && count !== 2) return { error: 'Can only jettison 1 or 2 cannons' };
+  if (ship.cannons < count) return { error: 'Ship does not have enough cannons' };
+  if (ship.jettisonBonus > 0) return { error: 'Ship has already jettisoned cannons this turn' };
+
+  ship.cannons -= count;
+  ship.jettisonBonus = count === 1 ? 1 : 3;
+
+  return { success: true, bonusMoves: ship.jettisonBonus, cannonsRemaining: ship.cannons };
 }
 
 // Player chooses to collect a specific treasure token
@@ -1861,6 +1891,7 @@ export function endTurn(state) {
     for (const ship of p.ships) {
       delete ship.builtThisTurn;
       delete ship.mastBuiltThisTurn;
+      ship.jettisonBonus = 0;
     }
   }
 

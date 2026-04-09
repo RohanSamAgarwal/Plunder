@@ -143,6 +143,8 @@ export const EVENTS = {
   ATTACK_BRIBE_DECISION: 'attack-bribe-decision',
   ATTACK_BRIBE_RESOLVE: 'attack-bribe-resolve',
   ATTACK_BRIBE_RESOLVED: 'attack-bribe-resolved',
+  // Jettison cannons (Lightening the Load)
+  JETTISON_CANNONS: 'jettison-cannons',
   // Reroll events
   REROLL_SAILING_DIE: 'reroll-sailing-die',
   REROLL_SHIPLESS: 'reroll-shipless',

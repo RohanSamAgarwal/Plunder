@@ -221,6 +221,34 @@ export default function Lobby({ room, playerInfo, messages, onStartGame }) {
                 <option value="spend_resources">Spend 3 Resources</option>
               </select>
             </div>
+            <div>
+              <label className="flex items-center justify-between text-xs text-pirate-tan/70 py-1 cursor-pointer">
+                <span>Lightening the Load</span>
+                <span className="text-[10px] text-pirate-tan/40 ml-1">Ships jettison cannons for extra movement</span>
+              </label>
+              <button
+                onClick={() =>
+                  isHost && emit('update-settings', {
+                    settings: { lightenTheLoad: !(room.settings?.lightenTheLoad ?? true) },
+                  })
+                }
+                disabled={!isHost}
+                className={`w-full flex items-center gap-2 bg-pirate-dark border border-pirate-tan/30 rounded px-3 py-2
+                           text-sm text-white transition
+                           ${!isHost ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:border-pirate-gold'}`}
+              >
+                <div className={`w-9 h-5 rounded-full relative transition-colors ${
+                  (room.settings?.lightenTheLoad ?? true) ? 'bg-green-600' : 'bg-gray-600'
+                }`}>
+                  <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${
+                    (room.settings?.lightenTheLoad ?? true) ? 'left-4' : 'left-0.5'
+                  }`} />
+                </div>
+                <span className="text-xs">
+                  {(room.settings?.lightenTheLoad ?? true) ? 'Enabled' : 'Disabled'}
+                </span>
+              </button>
+            </div>
           </div>
         </div>
 

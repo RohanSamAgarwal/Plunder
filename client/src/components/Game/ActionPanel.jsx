@@ -559,6 +559,9 @@ export default function ActionPanel({
             <>
               <div className="text-xs text-pirate-tan bg-pirate-dark/40 rounded px-2 py-1.5">
                 Moves: <span className="text-white font-bold">{gameState.movePointsRemaining}</span>
+                {selectedShip && (selectedShip.jettisonBonus || 0) > 0 && (
+                  <span className="text-orange-400 font-bold"> +{selectedShip.jettisonBonus}</span>
+                )}
                 {selectedShip && ' \u2022 Ship selected \u2014 click to move'}
               </div>
 
@@ -611,6 +614,42 @@ export default function ActionPanel({
                 </div>
               )}
             </>
+          )}
+
+          {/* Lightening the Load — Jettison Cannons */}
+          {gameState.settings?.lightenTheLoad && selectedShip && selectedShip.cannons > 0 && (selectedShip.jettisonBonus || 0) === 0 && (
+            <div className="bg-pirate-dark/50 border border-orange-500/30 rounded-lg p-2 space-y-1.5">
+              <h4 className="text-[10px] text-orange-400 uppercase tracking-wider font-semibold">
+                ⚓ Lightening the Load
+              </h4>
+              <p className="text-[10px] text-pirate-tan/60">Throw cannons overboard for bonus movement</p>
+              <div className="space-y-1">
+                <button
+                  onClick={() => emit('jettison-cannons', { shipId: selectedShip.id, count: 1 })}
+                  disabled={selectedShip.cannons < 1}
+                  className="w-full text-left bg-pirate-dark/50 border border-pirate-tan/10 rounded px-3 py-1.5
+                             text-xs hover:border-orange-500/50 transition disabled:opacity-40 disabled:cursor-not-allowed
+                             flex items-center justify-between">
+                  <span className="text-white font-medium">Jettison 1 Cannon</span>
+                  <span className="text-orange-400 font-bold">+1 Move</span>
+                </button>
+                {selectedShip.cannons >= 2 && (
+                  <button
+                    onClick={() => emit('jettison-cannons', { shipId: selectedShip.id, count: 2 })}
+                    className="w-full text-left bg-pirate-dark/50 border border-pirate-tan/10 rounded px-3 py-1.5
+                               text-xs hover:border-orange-500/50 transition
+                               flex items-center justify-between">
+                    <span className="text-white font-medium">Jettison 2 Cannons</span>
+                    <span className="text-orange-400 font-bold">+3 Moves</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+          {selectedShip && (selectedShip.jettisonBonus || 0) > 0 && (
+            <div className="text-[10px] text-orange-400 bg-orange-500/10 border border-orange-500/20 rounded px-2 py-1">
+              ⚓ Cannons jettisoned! +{selectedShip.jettisonBonus} bonus move{selectedShip.jettisonBonus !== 1 ? 's' : ''} for this ship
+            </div>
           )}
 
           {/* Attack Island button (when docked at an attackable port) */}

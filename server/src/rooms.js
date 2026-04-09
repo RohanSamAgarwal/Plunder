@@ -52,6 +52,7 @@ export function createRoom(hostSocketId, hostName) {
       ppToWin: 10,
       tradeKnowledge: TRADE_KNOWLEDGE.OPEN,
       rerollMode: REROLL_MODES.NONE,
+      lightenTheLoad: true,
     },
   };
 
@@ -169,6 +170,9 @@ export function updateSettings(code, playerId, settings) {
   }
   if (settings.rerollMode && Object.values(REROLL_MODES).includes(settings.rerollMode)) {
     room.settings.rerollMode = settings.rerollMode;
+  }
+  if (settings.lightenTheLoad !== undefined) {
+    room.settings.lightenTheLoad = !!settings.lightenTheLoad;
   }
 
   return { success: true, settings: room.settings };
