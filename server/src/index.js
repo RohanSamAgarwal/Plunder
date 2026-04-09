@@ -21,6 +21,7 @@ import {
   shiplessDisownIsland, shiplessChooseResource,
   submitBribeOffer, resolveAttackBribe, cancelPendingAttackForPlayer,
   rerollSailingDie, rerollShiplessDie, rerollCombatDie, skipCombatReroll,
+  jettisonCannons,
 } from './gameState.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -31,9 +32,11 @@ const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
     origin: process.env.NODE_ENV === 'production'
-      ? (process.env.RAILWAY_PUBLIC_DOMAIN
-          ? [`https://${process.env.RAILWAY_PUBLIC_DOMAIN}`]
-          : false)
+      ? (process.env.ALLOWED_ORIGIN
+          ? [process.env.ALLOWED_ORIGIN]
+          : process.env.RAILWAY_PUBLIC_DOMAIN
+            ? [`https://${process.env.RAILWAY_PUBLIC_DOMAIN}`]
+            : false)
       : ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173'],
     methods: ['GET', 'POST'],
   },
@@ -278,10 +281,19 @@ io.on('connection', (socket) => {
     broadcastGameState(found.room);
     callback?.(result);
 
-    if (result.drawn) {
-      io.to(found.room.code).emit(EVENTS.RESOURCES_DRAWN, {
+    if (result.drawn && result.drawn.length > 0) {
+      // To drawing player only — includes resource details
+      socket.emit(EVENTS.RESOURCES_DRAWN, {
         playerName: found.player.name,
+        playerId: found.player.id,
         drawn: result.drawn,
+        count: result.drawn.length,
+      });
+      // To everyone else — count only (resource types are private)
+      socket.to(found.room.code).emit(EVENTS.RESOURCES_DRAWN, {
+        playerName: found.player.name,
+        playerId: found.player.id,
+        count: result.drawn.length,
       });
     }
   });
@@ -327,6 +339,7 @@ io.on('connection', (socket) => {
 
     const ship = state.players[found.player.id]?.ships?.find(s => s.id === shipId);
     const oldPosition = ship ? { ...ship.position } : null;
+    const shipInfo = ship ? { masts: ship.masts, cannons: ship.cannons } : { masts: 1, cannons: 0 };
 
     const result = moveShip(state, found.player.id, shipId, path);
     if (result.error) return callback?.(result);
@@ -342,8 +355,22 @@ io.on('connection', (socket) => {
         playerColor: found.player.color,
         path: [oldPosition, ...path],
         arrivedAtPort: destTile?.type === 'port' || false,
+        ship: shipInfo,
       });
     }
+  });
+
+  // Lightening the Load: jettison cannons for bonus movement
+  socket.on(EVENTS.JETTISON_CANNONS, ({ shipId, count }, callback) => {
+    const found = getRoomBySocketId(socket.id);
+    if (!found || !found.room.gameState) return callback?.({ error: 'No game' });
+
+    const state = found.room.gameState;
+    const result = jettisonCannons(state, found.player.id, shipId, count);
+    if (result.error) return callback?.(result);
+
+    broadcastGameState(found.room);
+    callback?.(result);
   });
 
   // Building is allowed at any time during the player's turn
@@ -399,11 +426,14 @@ io.on('connection', (socket) => {
     } else {
       callback?.(result);
       const island = state.islands[islandId];
+      const attackerShipForIsland = state.players[found.player.id]?.ships?.find(s => s.id === shipId);
       io.to(found.room.code).emit(EVENTS.COMBAT_RESULT, {
         type: 'island',
         attacker: found.player.name,
         defender: island?.owner ? state.players[island.owner]?.name || 'Island' : 'Island',
         location: island?.port || null,
+        attackerLocation: attackerShipForIsland?.position || null,
+        defenderLocation: island?.port || null,
         ...result,
       });
     }
@@ -437,17 +467,21 @@ io.on('connection', (socket) => {
       callback?.({ success: true, pendingReroll: true });
     } else {
       callback?.(result);
-      // Find attacker ship position and defender name for the animation
+      // Find attacker/defender ship positions and defender name for the animation
       const attackerShip = state.players[found.player.id]?.ships?.find(s => s.id === attackerShipId);
       let defenderName = 'Ship';
+      let defenderShip = null;
       for (const p of Object.values(state.players)) {
-        if (p.ships.some(s => s.id === defenderShipId)) { defenderName = p.name; break; }
+        const ds = p.ships.find(s => s.id === defenderShipId);
+        if (ds) { defenderName = p.name; defenderShip = ds; break; }
       }
       io.to(found.room.code).emit(EVENTS.COMBAT_RESULT, {
         type: 'ship',
         attacker: found.player.name,
         defender: defenderName,
         location: attackerShip?.position || null,
+        attackerLocation: attackerShip?.position || null,
+        defenderLocation: defenderShip?.position || null,
         ...result,
       });
     }

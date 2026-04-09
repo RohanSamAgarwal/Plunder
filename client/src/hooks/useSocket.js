@@ -5,12 +5,19 @@ const SOCKET_URL = import.meta.env.PROD
   ? window.location.origin
   : 'http://localhost:3001';
 
+// In production behind Caddy, Socket.IO requests go to /plunder/socket.io/
+// Caddy strips /plunder, so the server receives /socket.io/ as expected.
+const SOCKET_PATH = import.meta.env.PROD
+  ? '/plunder/socket.io'
+  : '/socket.io';
+
 export function useSocket() {
   const socketRef = useRef(null);
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
     const socket = io(SOCKET_URL, {
+      path: SOCKET_PATH,
       autoConnect: true,
       reconnection: true,
       reconnectionAttempts: 10,
