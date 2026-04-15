@@ -27,6 +27,7 @@ export default function ActionPanel({
   const [tradeOffer, setTradeOffer] = useState({ ...EMPTY_RESOURCES });
   const [tradeRequest, setTradeRequest] = useState({ ...EMPTY_RESOURCES });
   const [showBuild, setShowBuild] = useState(false);
+  const [showBuildRef, setShowBuildRef] = useState(false);
   const [showMerchant, setShowMerchant] = useState(false);
   const [merchantReceive, setMerchantReceive] = useState('wood');
   const [merchantGive, setMerchantGive] = useState({ ...EMPTY_RESOURCES });
@@ -859,13 +860,48 @@ export default function ActionPanel({
 
       {/* ══════ Not your turn ══════ */}
       {!isMyTurn && phase === 'gameplay' && (
-        <div className="text-center text-pirate-tan/50 text-sm py-4">
-          <p>Waiting for {gameState.players[gameState.currentPlayerId]?.name}...</p>
+        <div className="text-pirate-tan/50 text-sm py-4">
+          <p className="text-center">Waiting for {gameState.players[gameState.currentPlayerId]?.name}...</p>
           {gameState.hasRolled && (
-            <p className="text-pirate-tan/40 text-xs mt-1">
+            <p className="text-pirate-tan/40 text-xs mt-1 text-center">
               Rolled {gameState.dieRoll} &mdash; {gameState.movePointsRemaining} move{gameState.movePointsRemaining !== 1 ? 's' : ''} left
             </p>
           )}
+
+          {/* Read-only build reference */}
+          <div className="mt-3 space-y-1">
+            <button onClick={() => setShowBuildRef(!showBuildRef)}
+              className="w-full bg-pirate-brown/50 border border-pirate-tan/20 text-pirate-tan/60
+                         py-1.5 rounded text-sm hover:border-pirate-tan/30 transition">
+              Build Costs {showBuildRef ? '\u25B2' : '\u25BC'}
+            </button>
+
+            {showBuildRef && (
+              <div className="space-y-1 pl-2">
+                {Object.entries(BUILD_COSTS).map(([type, cost]) => {
+                  const affordable = canAfford(cost);
+                  return (
+                    <div key={type}
+                      className={`w-full text-left bg-pirate-dark/50 border border-pirate-tan/10 rounded px-3 py-1.5
+                                  text-xs flex items-center justify-between ${affordable ? '' : 'opacity-40'}`}>
+                      <span className="text-white capitalize font-medium">
+                        {type === 'lifePeg' ? 'Life Peg' : type === 'plunderPoint' ? 'Plunder Point' : type}
+                        {affordable && <span className="text-green-400 ml-1 text-[10px]">✓</span>}
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        {Object.entries(cost).filter(([, v]) => v > 0).map(([r, v]) => (
+                          <span key={r} className="flex items-center gap-0.5">
+                            <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: RESOURCE_META[r]?.color }} />
+                            <span className="text-pirate-tan/70">{v}</span>
+                          </span>
+                        ))}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
