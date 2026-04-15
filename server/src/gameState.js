@@ -305,6 +305,7 @@ function createShip(ownerId, position) {
     cannons: 0,
     movesUsed: 0,
     doneForTurn: false,
+    hasAttackedThisTurn: false,
     jettisonBonus: 0,
   };
 }
@@ -1178,7 +1179,7 @@ function validateIslandAttack(state, playerId, shipId, islandId) {
   const island = state.islands[islandId];
 
   if (!ship || !island) return { error: 'Invalid ship or island' };
-  if (ship.doneForTurn) return { error: 'This ship cannot attack this turn' };
+  if (ship.doneForTurn || ship.hasAttackedThisTurn) return { error: 'This ship cannot attack this turn' };
   if (island.type !== 'resource') return { error: 'Cannot attack this island' };
   if (island.owner === playerId) return { error: 'You already own this island' };
 
@@ -1206,7 +1207,7 @@ function validateShipAttack(state, attackerId, attackerShipId, defenderShipId) {
   const attacker = state.players[attackerId];
   const attackerShip = attacker.ships.find(s => s.id === attackerShipId);
   if (!attackerShip) return { error: 'Attacker ship not found' };
-  if (attackerShip.doneForTurn) return { error: 'This ship cannot attack this turn' };
+  if (attackerShip.doneForTurn || attackerShip.hasAttackedThisTurn) return { error: 'This ship cannot attack this turn' };
 
   let defender = null;
   let defenderShip = null;
@@ -1276,10 +1277,10 @@ function startCombatWithReroll(state, type, attackerId, attackerShipId, targetId
   if (!state.attackedThisTurn[attackerShipId]) state.attackedThisTurn[attackerShipId] = new Set();
   state.attackedThisTurn[attackerShipId].add(targetId);
 
-  // Mark ship done
+  // Mark ship as having attacked (but still allow movement)
   const attackerPlayer = state.players[attackerId];
   const ship = attackerPlayer.ships.find(s => s.id === attackerShipId);
-  if (ship) ship.doneForTurn = true;
+  if (ship) ship.hasAttackedThisTurn = true;
 
   const attackerCanReroll = canReroll(state, attackerId);
   const defenderCanReroll = defenderId && canReroll(state, defenderId);
@@ -1426,7 +1427,7 @@ function executeIslandCombat(state, playerId, shipId, islandId) {
   const defenseDie = rollDie(6);
   const attackRoll = attackDie + ship.cannons;
   const defenseRoll = defenseDie + island.skulls;
-  ship.doneForTurn = true;
+  ship.hasAttackedThisTurn = true;
 
   if (!state.attackedThisTurn[shipId]) state.attackedThisTurn[shipId] = new Set();
   state.attackedThisTurn[shipId].add(islandId);
@@ -1457,6 +1458,8 @@ function executeShipCombat(state, attackerId, attackerShipId, defenderShipId) {
   const defenseDie = rollDie(6);
   const attackRoll = attackDie + attackerShip.cannons;
   const defenseRoll = defenseDie + defenderShip.cannons;
+
+  attackerShip.hasAttackedThisTurn = true;
 
   if (!state.attackedThisTurn[attackerShipId]) state.attackedThisTurn[attackerShipId] = new Set();
   state.attackedThisTurn[attackerShipId].add(defenderShipId);
@@ -1891,6 +1894,8 @@ export function endTurn(state) {
     for (const ship of p.ships) {
       delete ship.builtThisTurn;
       delete ship.mastBuiltThisTurn;
+      delete ship.hasAttackedThisTurn;
+      ship.doneForTurn = false;
       ship.jettisonBonus = 0;
     }
   }
