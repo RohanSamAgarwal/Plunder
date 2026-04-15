@@ -221,9 +221,8 @@ function isAcrossStormBorder(state, posA, posB) {
 }
 
 export function placeTreasureTokens(state) {
-  const count = Object.keys(state.players).length >= 5 ? 4 : 3;
-  const is2Player = Object.keys(state.players).length === 2;
-  const tokenCount = is2Player ? 2 : count;
+  const playerCount = Object.keys(state.players).length;
+  const tokenCount = playerCount <= 2 ? 2 : 4;
 
   state.treasureTokens = [];
   for (let i = 0; i < tokenCount; i++) {
