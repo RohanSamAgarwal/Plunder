@@ -44,7 +44,7 @@ const RESOURCE_META = {
 };
 const EMPTY_RESOURCES = { wood: 0, iron: 0, rum: 0, gold: 0 };
 
-export default function GameView({ gameState, playerInfo, messages, pendingTrade, pendingTreaty, pendingAttackBribe, attackBribeDecision, drawnCard, onDismissCard, deckShuffling, animations, diceRollAnim, onDiceRollComplete, cannonFireAnim, onCannonFireComplete, combatAnim, onCombatComplete, buildAnim, onBuildComplete, shipLaunchAnim, onShipLaunchComplete, shipMoveAnim, onShipMoveComplete, stormAnim, onStormComplete, eventAnim, onEventComplete, resourceDrawAnim, onResourceDrawComplete, gameStartAnim, onGameStartComplete, gameOverAnim, onGameOverComplete, roomCode }) {
+export default function GameView({ gameState, playerInfo, messages, pendingTrade, pendingTreaty, pendingAttackBribe, attackBribeDecision, drawnCard, onDismissCard, deckShuffling, animations, diceRollAnim, onDiceRollComplete, cannonFireAnim, onCannonFireComplete, combatAnim, onCombatComplete, buildAnim, onBuildComplete, shipLaunchAnim, onShipLaunchComplete, shipMoveAnim, onShipMoveComplete, stormAnim, onStormComplete, eventAnim, onEventComplete, resourceDrawAnim, onResourceDrawComplete, gameStartAnim, onGameStartComplete, gameOverAnim, onGameOverComplete, roomCode, skipVoteActive }) {
   const { emit } = useSocketContext();
   const { animSpeed, setAnimSpeed } = useAnimSpeed();
   const canvasRef = useRef(null);
@@ -65,6 +65,23 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
   useEffect(() => {
     if (!pendingAttackBribe) setBribeSubmitted(false);
   }, [pendingAttackBribe]);
+
+  // Turn timer countdown
+  const [turnElapsed, setTurnElapsed] = useState(0);
+  const [hasVoted, setHasVoted] = useState(false);
+  useEffect(() => {
+    if (!gameState?.turnStartedAt) { setTurnElapsed(0); return; }
+    const tick = () => setTurnElapsed(Math.floor((Date.now() - gameState.turnStartedAt) / 1000));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [gameState?.turnStartedAt]);
+
+  // Reset vote state on new turn
+  useEffect(() => { setHasVoted(false); }, [gameState?.turnNumber]);
+
+  const hardTimer = gameState?.settings?.hardTimerSeconds || 0;
+  const timeRemaining = hardTimer > 0 ? Math.max(0, hardTimer - turnElapsed) : null;
 
   // Track unread messages when on controls tab
   const prevMsgCount = useRef(messages?.length || 0);
@@ -491,6 +508,15 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
             </span>
             {isMyTurn && <span className="text-pirate-gold text-xs font-bold animate-pulse-gold px-1.5 py-0.5 rounded text-[10px]">YOUR TURN</span>}
           </div>
+          {timeRemaining !== null && gameState?.turnStartedAt && (
+            <span className={`text-xs font-mono ml-2 px-1.5 py-0.5 rounded ${
+              timeRemaining <= 10 ? 'text-red-400 animate-pulse font-bold' :
+              timeRemaining <= 30 ? 'text-yellow-400' :
+              'text-pirate-tan/50'
+            }`}>
+              {Math.floor(timeRemaining / 60)}:{String(timeRemaining % 60).padStart(2, '0')}
+            </span>
+          )}
         </div>
 
         {/* Right: Plunder Points leaderboard */}
@@ -695,6 +721,41 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
               Cancel Attack
             </button>
           </div>
+        </div>
+      )}
+
+      {/* ═══ Turn Timer Vote Popup ═══ */}
+      {skipVoteActive && !isMyTurn && !hasVoted && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50
+                        bg-pirate-brown border border-amber-500/50 p-4 rounded-lg shadow-lg max-w-sm w-72">
+          <h3 className="text-amber-400 font-pirate text-lg mb-2">Skip Turn?</h3>
+          <p className="text-sm text-pirate-tan mb-3">
+            <strong className="text-white">{currentPlayer?.name}</strong> is taking too long. Skip their turn?
+          </p>
+          <div className="flex gap-2">
+            <button onClick={() => { emit('turn-timer-vote', { vote: true }); setHasVoted(true); }}
+              className="flex-1 bg-red-700 hover:bg-red-600 text-white py-1.5 rounded text-sm font-bold transition">
+              Yes, Skip
+            </button>
+            <button onClick={() => { emit('turn-timer-vote', { vote: false }); setHasVoted(true); }}
+              className="flex-1 bg-gray-600 hover:bg-gray-500 text-white py-1.5 rounded text-sm transition">
+              No, Wait
+            </button>
+          </div>
+        </div>
+      )}
+      {skipVoteActive && !isMyTurn && hasVoted && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50
+                        bg-pirate-brown border border-amber-500/30 p-3 rounded-lg shadow-lg max-w-sm w-60 text-center">
+          <p className="text-sm text-pirate-tan">Vote cast. Waiting for others...</p>
+        </div>
+      )}
+      {skipVoteActive && isMyTurn && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50
+                        bg-red-900/90 border border-red-500 px-4 py-2 rounded-lg shadow-lg">
+          <p className="text-red-200 text-sm font-bold animate-pulse">
+            Players are voting to skip your turn!
+          </p>
         </div>
       )}
 

@@ -155,4 +155,9 @@ export const EVENTS = {
   END_TURN: 'end-turn',
   TURN_ENDED: 'turn-ended',
   GAME_OVER: 'game-over',
+  // Turn timer events
+  TURN_TIMER_VOTE_START: 'turn-timer-vote-start',
+  TURN_TIMER_VOTE: 'turn-timer-vote',
+  TURN_TIMER_VOTE_RESULT: 'turn-timer-vote-result',
+  TURN_TIMER_EXPIRED: 'turn-timer-expired',
 };

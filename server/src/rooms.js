@@ -53,6 +53,8 @@ export function createRoom(hostSocketId, hostName) {
       tradeKnowledge: TRADE_KNOWLEDGE.OPEN,
       rerollMode: REROLL_MODES.NONE,
       lightenTheLoad: true,
+      softTimerSeconds: 60,
+      hardTimerSeconds: 300,
     },
   };
 
@@ -173,6 +175,23 @@ export function updateSettings(code, playerId, settings) {
   }
   if (settings.lightenTheLoad !== undefined) {
     room.settings.lightenTheLoad = !!settings.lightenTheLoad;
+  }
+  if (settings.softTimerSeconds !== undefined) {
+    const val = parseInt(settings.softTimerSeconds, 10);
+    if (!isNaN(val) && val >= 0 && val <= 600) {
+      room.settings.softTimerSeconds = val;
+    }
+  }
+  if (settings.hardTimerSeconds !== undefined) {
+    const val = parseInt(settings.hardTimerSeconds, 10);
+    if (!isNaN(val) && val >= 0 && val <= 900) {
+      room.settings.hardTimerSeconds = val;
+    }
+  }
+  // Ensure soft < hard when both non-zero
+  if (room.settings.softTimerSeconds > 0 && room.settings.hardTimerSeconds > 0 &&
+      room.settings.softTimerSeconds >= room.settings.hardTimerSeconds) {
+    room.settings.softTimerSeconds = room.settings.hardTimerSeconds - 1;
   }
 
   return { success: true, settings: room.settings };

@@ -867,6 +867,19 @@ export default function ActionPanel({
               Rolled {gameState.dieRoll} &mdash; {gameState.movePointsRemaining} move{gameState.movePointsRemaining !== 1 ? 's' : ''} left
             </p>
           )}
+          {gameState.turnStartedAt && gameState.settings?.hardTimerSeconds > 0 && (() => {
+            const elapsed = Math.floor((Date.now() - gameState.turnStartedAt) / 1000);
+            const remaining = Math.max(0, gameState.settings.hardTimerSeconds - elapsed);
+            const m = Math.floor(remaining / 60);
+            const s = remaining % 60;
+            return (
+              <p className={`text-xs mt-1 text-center font-mono ${
+                remaining <= 10 ? 'text-red-400 font-bold' : remaining <= 30 ? 'text-yellow-400' : 'text-pirate-tan/30'
+              }`}>
+                {m}:{String(s).padStart(2, '0')} remaining
+              </p>
+            );
+          })()}
 
           {/* Read-only build reference */}
           <div className="mt-3 space-y-1">

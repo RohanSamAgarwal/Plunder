@@ -53,6 +53,7 @@ export function createGameState(players, playerCount, settings = {}) {
     combatLog: [],
     attackedThisTurn: {}, // { [shipId]: Set([targetId1, targetId2]) } — prevents same ship attacking same target twice per turn
     turnNumber: 0,
+    turnStartedAt: null,
 
     // Game settings (configurable in lobby)
     settings: {
@@ -62,6 +63,8 @@ export function createGameState(players, playerCount, settings = {}) {
       tradeKnowledge: settings.tradeKnowledge || TRADE_KNOWLEDGE.OPEN,
       rerollMode: settings.rerollMode || REROLL_MODES.NONE,
       lightenTheLoad: settings.lightenTheLoad !== undefined ? settings.lightenTheLoad : true,
+      softTimerSeconds: settings.softTimerSeconds ?? 60,
+      hardTimerSeconds: settings.hardTimerSeconds ?? 300,
     },
   };
 
@@ -1863,11 +1866,7 @@ export function merchantBankTrade(state, playerId, give, receive) {
 
 // === TURN MANAGEMENT ===
 
-export function endTurn(state) {
-  if (state.pendingStormCost) return { error: 'Must resolve storm cost before ending turn' };
-  if (state.pendingAttack) return { error: 'Must resolve pending attack before ending turn' };
-  if (state.pendingCombatReroll) return { error: 'Must resolve combat reroll before ending turn' };
-
+function _advanceTurn(state) {
   state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.turnOrder.length;
   state.turnPhase = TURN_PHASES.DRAW_RESOURCES;
   state.movePointsRemaining = 0;
@@ -1879,9 +1878,10 @@ export function endTurn(state) {
   state.pendingCombatReroll = null;
   state.pendingTrade = null;
   state.pendingTreasure = null;
-  state.pendingAttack = null; // safety fallback
-  state.pendingStormCost = null; // Safety fallback
-  state.attackedThisTurn = {}; // Reset attack cooldowns
+  state.pendingAttack = null;
+  state.pendingStormCost = null;
+  state.attackedThisTurn = {};
+  state.turnStartedAt = null;
   // Rulebook: clear shipless recovery block — flag only lasts the turn it was set
   for (const p of Object.values(state.players)) {
     delete p.shiplessRecoveryBlocked;
@@ -1914,6 +1914,23 @@ export function endTurn(state) {
     nextPlayer: state.turnOrder[state.currentPlayerIndex],
     turnNumber: state.turnNumber,
   };
+}
+
+export function endTurn(state) {
+  if (state.pendingStormCost) return { error: 'Must resolve storm cost before ending turn' };
+  if (state.pendingAttack) return { error: 'Must resolve pending attack before ending turn' };
+  if (state.pendingCombatReroll) return { error: 'Must resolve combat reroll before ending turn' };
+  return _advanceTurn(state);
+}
+
+export function forceEndTurn(state) {
+  // Clear all pending state so the turn can advance regardless
+  state.pendingStormCost = null;
+  state.pendingAttack = null;
+  state.pendingCombatReroll = null;
+  state.pendingTrade = null;
+  state.pendingTreasure = null;
+  return { ..._advanceTurn(state), forced: true };
 }
 
 export function calculatePlunderPoints(state, playerId) {
@@ -1992,6 +2009,7 @@ export function getPublicGameState(state, forPlayerId) {
     } : null,
     tradeEligible,
     treaties: state.treaties.filter(t => t.turnNumber === state.turnNumber),
+    turnStartedAt: state.turnStartedAt,
     settings: state.settings,
     atMerchant: forPlayerId ? isPlayerAtMerchant(state, forPlayerId) : false,
     hasRerolledSailing: state.hasRerolledSailing || false,

@@ -60,6 +60,7 @@ export default function GamePage() {
   const [pendingTreaty, setPendingTreaty] = useState(null);
   const [pendingAttackBribe, setPendingAttackBribe] = useState(null);
   const [attackBribeDecision, setAttackBribeDecision] = useState(null);
+  const [skipVoteActive, setSkipVoteActive] = useState(false);
   const [drawnCard, setDrawnCard] = useState(null);
   const [deckShuffling, setDeckShuffling] = useState(false);
   const [animations, setAnimations] = useState([]);
@@ -161,6 +162,7 @@ export default function GamePage() {
         setPendingTreaty(null);
         setPendingAttackBribe(null);
         setAttackBribeDecision(null);
+        setSkipVoteActive(false);
         setEventAnim({ icon: '🏴‍☠️', title: `${nextPlayerName || 'Next'}'s Turn`, color: '#d4a017' });
       }),
       on(EVENTS.DIE_ROLLED, ({ playerId, playerName, roll, totalMovePoints, reroll, stormMoved }) => {
@@ -311,6 +313,23 @@ export default function GamePage() {
       on(EVENTS.TREASURE_STEAL_RESOLVED, ({ thiefName, targetName, count }) => {
         addSystemMessage(`${thiefName} stole ${count} resource${count !== 1 ? 's' : ''} from ${targetName}!`);
       }),
+      on(EVENTS.TURN_TIMER_VOTE_START, () => {
+        setSkipVoteActive(true);
+      }),
+      on(EVENTS.TURN_TIMER_VOTE_RESULT, ({ passed, skippedPlayerName }) => {
+        setSkipVoteActive(false);
+        if (passed) {
+          addSystemMessage(`Vote passed! ${skippedPlayerName}'s turn was skipped.`);
+          setEventAnim({ icon: '⏭️', title: 'Turn Skipped!', subtitle: `${skippedPlayerName} was voted out`, color: '#f59e0b' });
+        } else {
+          addSystemMessage('Vote failed — turn continues.');
+        }
+      }),
+      on(EVENTS.TURN_TIMER_EXPIRED, ({ skippedPlayerName }) => {
+        setSkipVoteActive(false);
+        addSystemMessage(`Time's up! ${skippedPlayerName}'s turn was auto-skipped.`);
+        setEventAnim({ icon: '⏰', title: 'Time Expired!', subtitle: `${skippedPlayerName}'s turn ended`, color: '#ef4444' });
+      }),
     ];
 
     return () => unsubs.forEach(u => u?.());
@@ -458,6 +477,7 @@ export default function GamePage() {
       gameOverAnim={gameOverAnim}
       onGameOverComplete={() => setGameOverAnim(null)}
       roomCode={code}
+      skipVoteActive={skipVoteActive}
     />
   );
 }

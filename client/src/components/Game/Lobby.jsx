@@ -250,6 +250,49 @@ export default function Lobby({ room, playerInfo, messages, onStartGame }) {
               </button>
             </div>
           </div>
+
+          {/* Turn Timer Settings */}
+          <div>
+            <label className="block text-pirate-tan text-xs mb-1 font-semibold">Vote Timer (seconds)</label>
+            <p className="text-[10px] text-pirate-tan/50 mb-1">Other players can vote to skip after this long. 0 = off.</p>
+            <input
+              type="number"
+              min={0}
+              max={600}
+              value={room.settings?.softTimerSeconds ?? 60}
+              onChange={(e) => {
+                const val = parseInt(e.target.value, 10);
+                if (!isNaN(val) && val >= 0 && val <= 600) {
+                  emit('update-settings', { settings: { softTimerSeconds: val } });
+                }
+              }}
+              disabled={!isHost}
+              className={`w-full bg-pirate-dark border border-pirate-tan/30 rounded px-3 py-2
+                         text-sm text-white focus:outline-none focus:border-pirate-gold
+                         ${!isHost ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+            />
+          </div>
+
+          <div>
+            <label className="block text-pirate-tan text-xs mb-1 font-semibold">Auto-Skip Timer (seconds)</label>
+            <p className="text-[10px] text-pirate-tan/50 mb-1">Turn ends automatically after this long. 0 = off.</p>
+            <input
+              type="number"
+              min={0}
+              max={900}
+              value={room.settings?.hardTimerSeconds ?? 300}
+              onChange={(e) => {
+                const val = parseInt(e.target.value, 10);
+                if (!isNaN(val) && val >= 0 && val <= 900) {
+                  emit('update-settings', { settings: { hardTimerSeconds: val } });
+                }
+              }}
+              disabled={!isHost}
+              className={`w-full bg-pirate-dark border border-pirate-tan/30 rounded px-3 py-2
+                         text-sm text-white focus:outline-none focus:border-pirate-gold
+                         ${!isHost ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+            />
+          </div>
         </div>
 
         {/* Chat */}

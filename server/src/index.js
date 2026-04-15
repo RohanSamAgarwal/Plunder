@@ -21,8 +21,11 @@ import {
   shiplessDisownIsland, shiplessChooseResource,
   submitBribeOffer, resolveAttackBribe, cancelPendingAttackForPlayer,
   rerollSailingDie, rerollShiplessDie, rerollCombatDie, skipCombatReroll,
-  jettisonCannons,
+  jettisonCannons, forceEndTurn,
 } from './gameState.js';
+import {
+  startTurnTimers, stopTurnTimers, handleSkipVote, onPlayerDisconnectDuringVote,
+} from './turnTimer.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -259,6 +262,11 @@ io.on('connection', (socket) => {
     const state = found.room.gameState;
     const result = pickStartingIsland(state, found.player.id, islandId);
     if (result.error) return callback?.({ error: result.error });
+
+    // Start turn timers when gameplay begins
+    if (state.phase === 'gameplay') {
+      startTurnTimers(found.room, io, broadcastGameState);
+    }
 
     broadcastGameState(found.room);
 
@@ -676,10 +684,12 @@ io.on('connection', (socket) => {
 
     // Handle end_turn treasure card
     if (result.endsTurn) {
+      stopTurnTimers(found.room);
       const endResult = endTurn(state);
       broadcastGameState(found.room);
       const nextName = state.players[endResult.nextPlayer]?.name || 'Unknown';
       io.to(found.room.code).emit(EVENTS.TURN_ENDED, { ...endResult, nextPlayerName: nextName });
+      startTurnTimers(found.room, io, broadcastGameState);
     }
   });
 
@@ -994,11 +1004,25 @@ io.on('connection', (socket) => {
     }
 
     const result = endTurn(state);
+    if (result.error) return callback?.(result);
+
+    stopTurnTimers(found.room);
     broadcastGameState(found.room);
     callback?.(result);
 
     const nextPlayerName = state.players[result.nextPlayer]?.name || 'Unknown';
     io.to(found.room.code).emit(EVENTS.TURN_ENDED, { ...result, nextPlayerName });
+
+    startTurnTimers(found.room, io, broadcastGameState);
+  });
+
+  // --- TURN TIMER VOTE ---
+
+  socket.on(EVENTS.TURN_TIMER_VOTE, ({ vote }, callback) => {
+    const found = getRoomBySocketId(socket.id);
+    if (!found || !found.room.gameState) return callback?.({ error: 'No game' });
+    const result = handleSkipVote(found.room, found.player.id, !!vote, io);
+    callback?.(result || { success: true });
   });
 
   // --- DISCONNECT ---
@@ -1015,6 +1039,9 @@ io.on('connection', (socket) => {
         });
         if (found.room.gameState) {
           cancelPendingAttackForPlayer(found.room.gameState, result.player.id);
+          if (found.room.skipVote) {
+            onPlayerDisconnectDuringVote(found.room, result.player.id);
+          }
           broadcastGameState(found.room);
         }
       }
@@ -1024,6 +1051,10 @@ io.on('connection', (socket) => {
 });
 
 function broadcastGameState(room) {
+  // Stop timers if game ended
+  if (room.gameState?.phase === 'game_over') {
+    stopTurnTimers(room);
+  }
   for (const player of room.players) {
     if (!player.connected) continue;
     const sock = io.sockets.sockets.get(player.socketId);
