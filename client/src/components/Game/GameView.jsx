@@ -860,7 +860,7 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
       <div className="flex-1 flex overflow-hidden">
         {/* Board area */}
         <div className="flex-1 relative">
-        <div ref={boardContainerRef} className="absolute inset-0 overflow-auto flex items-center justify-center p-2">
+        <div ref={boardContainerRef} className={`absolute inset-0 overflow-auto p-2 ${zoomLevel <= 1 ? 'flex items-center justify-center' : ''}`}>
           {phase === 'starting_island_pick' && (
             <div className="absolute top-20 left-1/2 -translate-x-1/2 z-40
                             bg-pirate-brown/90 border border-pirate-gold px-4 py-2 rounded text-center">
@@ -872,7 +872,7 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
               </p>
             </div>
           )}
-          <div className="relative inline-block" style={zoomLevel <= 1 ? { maxWidth: '100%', maxHeight: '100%' } : {}}>
+          <div className="relative inline-block" style={zoomLevel <= 1 ? { maxWidth: '100%', maxHeight: '100%' } : { margin: 'auto' }}>
             <canvas
               ref={canvasRef}
               width={canvasW}
