@@ -56,9 +56,15 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
   const [notification, setNotification] = useState('');
   const [treasuresFound, setTreasuresFound] = useState([]);
   const [bribeOffer, setBribeOffer] = useState({ ...EMPTY_RESOURCES });
+  const [bribeSubmitted, setBribeSubmitted] = useState(false);
   const [activeTab, setActiveTab] = useState('controls');
   const [unreadCount, setUnreadCount] = useState(0);
   const activeTabRef = useRef('controls');
+
+  // Reset bribe submitted state when bribe flow completes
+  useEffect(() => {
+    if (!pendingAttackBribe) setBribeSubmitted(false);
+  }, [pendingAttackBribe]);
 
   // Track unread messages when on controls tab
   const prevMsgCount = useRef(messages?.length || 0);
@@ -400,11 +406,13 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
     const total = Object.values(bribeOffer).reduce((s, v) => s + v, 0);
     await emit('attack-bribe-offer', { offer: total > 0 ? bribeOffer : null });
     setBribeOffer({ ...EMPTY_RESOURCES });
+    setBribeSubmitted(true);
   }
 
   async function handleBribeDecline() {
     await emit('attack-bribe-offer', { offer: null });
     setBribeOffer({ ...EMPTY_RESOURCES });
+    setBribeSubmitted(true);
   }
 
   async function handleBribeResolve(decision) {
@@ -597,33 +605,47 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
       {pendingAttackBribe && (
         <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50
                         bg-pirate-brown border border-red-500/50 p-4 rounded-lg shadow-lg max-w-sm w-80">
-          <h3 className="text-red-400 font-pirate text-lg mb-2">Under Attack!</h3>
-          <p className="text-sm text-pirate-tan mb-3">
-            <strong className="text-white">{pendingAttackBribe.attackerName}</strong> is attacking your {pendingAttackBribe.type === 'ship' ? 'ship' : 'island'}! Offer a bribe?
-          </p>
-          <div className="grid grid-cols-4 gap-1 mb-2">
-            {Object.entries(RESOURCE_META).map(([r, meta]) => (
-              <div key={r} className="text-center">
-                <div className="text-[10px] font-bold" style={{ color: meta.color }}>{meta.label}</div>
-                <div className="text-[10px] text-pirate-tan/50 mb-0.5">({myResources[r] || 0})</div>
-                <input type="number" min="0" max={myResources[r] || 0} value={bribeOffer[r]}
-                  onChange={(e) => setBribeOffer(prev => ({ ...prev, [r]: Math.min(parseInt(e.target.value) || 0, myResources[r] || 0) }))}
-                  className="w-full bg-pirate-dark border border-pirate-tan/20 rounded text-center text-xs py-0.5 text-white" />
+          {bribeSubmitted ? (
+            <>
+              <h3 className="text-amber-400 font-pirate text-lg mb-2">Bribe Sent!</h3>
+              <p className="text-sm text-pirate-tan">
+                Waiting for <strong className="text-white">{pendingAttackBribe.attackerName}</strong> to decide...
+              </p>
+              <div className="mt-3 flex justify-center">
+                <div className="animate-pulse text-pirate-gold text-2xl">⏳</div>
               </div>
-            ))}
-          </div>
-          <div className="flex gap-2">
-            <button onClick={handleBribeOffer}
-              disabled={Object.values(bribeOffer).reduce((s, v) => s + v, 0) === 0}
-              className="flex-1 bg-amber-600 hover:bg-amber-500 text-white py-1.5 rounded text-sm font-bold
-                         disabled:opacity-40 disabled:cursor-not-allowed transition">
-              Offer Bribe
-            </button>
-            <button onClick={handleBribeDecline}
-              className="flex-1 bg-gray-600 hover:bg-gray-500 text-white py-1.5 rounded text-sm transition">
-              Decline
-            </button>
-          </div>
+            </>
+          ) : (
+            <>
+              <h3 className="text-red-400 font-pirate text-lg mb-2">Under Attack!</h3>
+              <p className="text-sm text-pirate-tan mb-3">
+                <strong className="text-white">{pendingAttackBribe.attackerName}</strong> is attacking your {pendingAttackBribe.type === 'ship' ? 'ship' : 'island'}! Offer a bribe?
+              </p>
+              <div className="grid grid-cols-4 gap-1 mb-2">
+                {Object.entries(RESOURCE_META).map(([r, meta]) => (
+                  <div key={r} className="text-center">
+                    <div className="text-[10px] font-bold" style={{ color: meta.color }}>{meta.label}</div>
+                    <div className="text-[10px] text-pirate-tan/50 mb-0.5">({myResources[r] || 0})</div>
+                    <input type="number" min="0" max={myResources[r] || 0} value={bribeOffer[r]}
+                      onChange={(e) => setBribeOffer(prev => ({ ...prev, [r]: Math.min(parseInt(e.target.value) || 0, myResources[r] || 0) }))}
+                      className="w-full bg-pirate-dark border border-pirate-tan/20 rounded text-center text-xs py-0.5 text-white" />
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <button onClick={handleBribeOffer}
+                  disabled={Object.values(bribeOffer).reduce((s, v) => s + v, 0) === 0}
+                  className="flex-1 bg-amber-600 hover:bg-amber-500 text-white py-1.5 rounded text-sm font-bold
+                             disabled:opacity-40 disabled:cursor-not-allowed transition">
+                  Offer Bribe
+                </button>
+                <button onClick={handleBribeDecline}
+                  className="flex-1 bg-gray-600 hover:bg-gray-500 text-white py-1.5 rounded text-sm transition">
+                  Decline
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
 
