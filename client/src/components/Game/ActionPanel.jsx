@@ -860,7 +860,12 @@ export default function ActionPanel({
       {/* ══════ Not your turn ══════ */}
       {!isMyTurn && phase === 'gameplay' && (
         <div className="text-center text-pirate-tan/50 text-sm py-4">
-          Waiting for {gameState.players[gameState.currentPlayerId]?.name}...
+          <p>Waiting for {gameState.players[gameState.currentPlayerId]?.name}...</p>
+          {gameState.hasRolled && (
+            <p className="text-pirate-tan/40 text-xs mt-1">
+              Rolled {gameState.dieRoll} &mdash; {gameState.movePointsRemaining} move{gameState.movePointsRemaining !== 1 ? 's' : ''} left
+            </p>
+          )}
         </div>
       )}
 

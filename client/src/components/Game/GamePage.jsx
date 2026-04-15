@@ -165,6 +165,7 @@ export default function GamePage() {
       }),
       on(EVENTS.DIE_ROLLED, ({ playerId, playerName, roll, totalMovePoints, reroll, stormMoved }) => {
         if (stormMoved) addSystemMessage('The storm has moved!');
+        addSystemMessage(`${playerName || 'A player'} rolled a ${roll} (${totalMovePoints} move${totalMovePoints !== 1 ? 's' : ''})`);
         setDiceRollAnim({
           roll,
           totalMovePoints,
@@ -306,6 +307,9 @@ export default function GamePage() {
           addSystemMessage(`${data.attackerName} rejected the bribe and attacked!`);
           setEventAnim({ icon: '⚔️', title: 'Bribe Rejected!', subtitle: 'Prepare for battle!', color: '#f87171' });
         }
+      }),
+      on(EVENTS.TREASURE_STEAL_RESOLVED, ({ thiefName, targetName, count }) => {
+        addSystemMessage(`${thiefName} stole ${count} resource${count !== 1 ? 's' : ''} from ${targetName}!`);
       }),
     ];
 

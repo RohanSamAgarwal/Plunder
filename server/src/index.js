@@ -63,7 +63,7 @@ app.get('/api/room/:code', (req, res) => {
 
 // Bug report endpoint — creates a GitHub Issue
 app.post('/api/bugs', async (req, res) => {
-  const { description } = req.body;
+  const { description, playerName } = req.body;
   if (!description || typeof description !== 'string' || !description.trim()) {
     return res.status(400).json({ error: 'Description is required' });
   }
@@ -75,8 +75,9 @@ app.post('/api/bugs', async (req, res) => {
   }
 
   const trimmed = description.trim();
+  const reporter = playerName && typeof playerName === 'string' ? playerName.trim() : 'Anonymous';
   const title = trimmed.length > 80 ? trimmed.slice(0, 77) + '...' : trimmed;
-  const body = `${trimmed}\n\n---\n*Submitted via in-game bug report on ${new Date().toISOString()}*`;
+  const body = `${trimmed}\n\nReported by: **${reporter}**\n\n---\n*Submitted via in-game bug report on ${new Date().toISOString()}*`;
 
   try {
     const ghRes = await fetch('https://api.github.com/repos/RohanSamAgarwal/Plunder/issues', {
@@ -589,6 +590,8 @@ io.on('connection', (socket) => {
     if (!found || !found.room.gameState) return callback?.({ error: 'No game' });
 
     const state = found.room.gameState;
+    // Capture pending info before reroll clears it
+    const pending = state.pendingCombatReroll;
     const result = rerollCombatDie(state, found.player.id, resourceCost);
     if (result.error) return callback?.(result);
 
@@ -596,9 +599,18 @@ io.on('connection', (socket) => {
     callback?.(result);
 
     if (result.resolved && result.combat) {
+      const attackerName = state.players[pending.attackerId]?.name || found.player.name;
+      let defender;
+      if (pending.type === 'island') {
+        const island = state.islands[pending.targetId];
+        defender = island?.owner ? state.players[island.owner]?.name || 'Island' : 'Island';
+      } else {
+        defender = state.players[pending.defenderId]?.name || 'Ship';
+      }
       io.to(found.room.code).emit(EVENTS.COMBAT_RESULT, {
         type: result.combatType || 'ship',
-        attacker: found.player.name,
+        attacker: attackerName,
+        defender,
         ...result.combat,
       });
     }
@@ -609,6 +621,8 @@ io.on('connection', (socket) => {
     if (!found || !found.room.gameState) return callback?.({ error: 'No game' });
 
     const state = found.room.gameState;
+    // Capture pending info before skip clears it
+    const pending = state.pendingCombatReroll;
     const result = skipCombatReroll(state, found.player.id);
     if (result.error) return callback?.(result);
 
@@ -616,11 +630,18 @@ io.on('connection', (socket) => {
     callback?.(result);
 
     if (result.resolved && result.combat) {
-      const attackerName = found.room.players.find(p => p.id === result.combat?.attackerId)?.name
-        || found.player.name;
+      const attackerName = state.players[pending.attackerId]?.name || found.player.name;
+      let defender;
+      if (pending.type === 'island') {
+        const island = state.islands[pending.targetId];
+        defender = island?.owner ? state.players[island.owner]?.name || 'Island' : 'Island';
+      } else {
+        defender = state.players[pending.defenderId]?.name || 'Ship';
+      }
       io.to(found.room.code).emit(EVENTS.COMBAT_RESULT, {
         type: result.combatType || 'ship',
         attacker: attackerName,
+        defender,
         ...result.combat,
       });
     }
@@ -673,6 +694,14 @@ io.on('connection', (socket) => {
     let result;
     if (pending.type === 'steal') {
       result = resolveTreasureSteal(state, found.player.id, targetId);
+      if (result.success) {
+        const targetName = state.players[targetId]?.name || 'Unknown';
+        io.to(found.room.code).emit(EVENTS.TREASURE_STEAL_RESOLVED, {
+          thiefName: found.player.name,
+          targetName,
+          count: result.stolen?.length || 0,
+        });
+      }
     } else if (pending.type === 'storm_discard') {
       result = resolveTreasureStormDiscard(state, found.player.id, discards);
     } else {

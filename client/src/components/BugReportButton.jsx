@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import { usePlayerContext } from '../App';
 
 const API_URL = import.meta.env.PROD ? '' : 'http://localhost:3001';
 
 export default function BugReportButton() {
+  const { playerInfo } = usePlayerContext();
   const [showModal, setShowModal] = useState(false);
   const [description, setDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -16,7 +18,7 @@ export default function BugReportButton() {
       const res = await fetch(`${API_URL}/api/bugs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ description: description.trim() }),
+        body: JSON.stringify({ description: description.trim(), playerName: playerInfo?.name }),
       });
       if (!res.ok) throw new Error('Server error');
       setFeedback('Bug report sent! Thank you.');

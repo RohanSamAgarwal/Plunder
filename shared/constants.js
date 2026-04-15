@@ -125,6 +125,7 @@ export const EVENTS = {
   TREASURE_DECK_RESHUFFLED: 'treasure-deck-reshuffled',
   RESOLVE_TREASURE: 'resolve-treasure',
   TREASURE_RESOLVED: 'treasure-resolved',
+  TREASURE_STEAL_RESOLVED: 'treasure-steal-resolved',
   DECLINE_TREASURE: 'decline-treasure',
   RESOLVE_STORM_COST: 'resolve-storm-cost',
   PROPOSE_TREATY: 'propose-treaty',

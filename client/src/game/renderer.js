@@ -604,10 +604,11 @@ function drawStaticLayer(ctx, canvas, gameState, layout) {
     const tileCX = gp + bestTile.col * ts + ts / 2;
     const tileCY = gp + bestTile.row * ts + ts / 2;
 
-    drawSkullBadge(ctx, tileCX, tileCY, island.skulls, ts);
+    const ownerColor = island.owner && players[island.owner] ? SHIP_COLORS[players[island.owner].color] : null;
+    drawSkullBadge(ctx, tileCX, tileCY, island.skulls, ts, ownerColor);
 
-    if (island.owner && players[island.owner]) {
-      drawOwnerFlag(ctx, tileCX + ts * 0.35, tileCY - ts * 0.35, SHIP_COLORS[players[island.owner].color], ts, bestTile.row, bestTile.col);
+    if (ownerColor) {
+      drawOwnerFlag(ctx, tileCX + ts * 0.35, tileCY - ts * 0.35, ownerColor, ts, bestTile.row, bestTile.col);
     }
   }
 
@@ -1440,7 +1441,7 @@ function drawLandBarrier(ctx, x, y, ts) {
 
 // ── Decorations ────────────────────────────────────────────────
 
-function drawSkullBadge(ctx, tileCX, tileCY, skulls, ts) {
+function drawSkullBadge(ctx, tileCX, tileCY, skulls, ts, ownerColor) {
   // All skulls must fit within one tile, centered horizontally and vertically
   // Scale skull size based on count so they always fit within ts width
   const maxWidth = ts * 0.85; // usable width within one tile
@@ -1452,13 +1453,15 @@ function drawSkullBadge(ctx, tileCX, tileCY, skulls, ts) {
   const startX = tileCX - totalW / 2;
 
   for (let i = 0; i < skulls; i++) {
-    drawSkullIcon(ctx, startX + i * spacing, tileCY, skullSize);
+    drawSkullIcon(ctx, startX + i * spacing, tileCY, skullSize, ownerColor);
   }
 }
 
-function drawSkullIcon(ctx, cx, cy, size) {
+function drawSkullIcon(ctx, cx, cy, size, ownerColor) {
   const s = size;
   const lw = Math.max(1.2, s * 0.06);
+  const fillColor = ownerColor || '#ede6d6';
+  const outlineColor = ownerColor ? '#1a1a1a' : '#2a1f14';
 
   ctx.save();
   ctx.lineJoin = 'round';
@@ -1472,8 +1475,8 @@ function drawSkullIcon(ctx, cx, cy, size) {
   // ── Head (very round) ──
   const headR = s * 0.36;
   const headY = cy - s * 0.05;
-  ctx.fillStyle = '#ede6d6';
-  ctx.strokeStyle = '#2a1f14';
+  ctx.fillStyle = fillColor;
+  ctx.strokeStyle = outlineColor;
   ctx.lineWidth = lw;
   ctx.beginPath();
   ctx.arc(cx, headY, headR, 0, Math.PI * 2);
@@ -1486,19 +1489,19 @@ function drawSkullIcon(ctx, cx, cy, size) {
   const jawBot = headY + headR * 1.25;
   const jawWTop = headR * 0.75;
   const jawWBot = headR * 0.5;
-  ctx.fillStyle = '#ede6d6';
+  ctx.fillStyle = fillColor;
   ctx.beginPath();
   ctx.moveTo(cx - jawWTop, jawTop);
   ctx.quadraticCurveTo(cx - jawWBot * 1.1, jawBot, cx, jawBot + s * 0.02);
   ctx.quadraticCurveTo(cx + jawWBot * 1.1, jawBot, cx + jawWTop, jawTop);
   ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = '#2a1f14';
+  ctx.strokeStyle = outlineColor;
   ctx.lineWidth = lw;
   ctx.stroke();
 
   // Cover the line between head and jaw (fill over the seam)
-  ctx.fillStyle = '#ede6d6';
+  ctx.fillStyle = fillColor;
   ctx.beginPath();
   ctx.arc(cx, headY, headR - lw * 0.6, 0.15 * Math.PI, 0.85 * Math.PI);
   ctx.closePath();
@@ -1508,7 +1511,7 @@ function drawSkullIcon(ctx, cx, cy, size) {
   const eyeR = s * 0.1;
   const eyeY = headY - s * 0.02;
   const eyeSpread = s * 0.15;
-  ctx.fillStyle = '#2a1f14';
+  ctx.fillStyle = outlineColor;
   for (const dir of [-1, 1]) {
     ctx.beginPath();
     ctx.arc(cx + dir * eyeSpread, eyeY, eyeR, 0, Math.PI * 2);
@@ -1522,7 +1525,7 @@ function drawSkullIcon(ctx, cx, cy, size) {
   ctx.fill();
 
   // ── Smile (curved line) ──
-  ctx.strokeStyle = '#2a1f14';
+  ctx.strokeStyle = outlineColor;
   ctx.lineWidth = Math.max(1, s * 0.04);
   const smileY = headY + s * 0.2;
   const smileW = s * 0.16;
