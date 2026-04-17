@@ -1189,9 +1189,9 @@ function validateIslandAttack(state, playerId, shipId, islandId) {
     return { error: 'Must be in the island port to attack' };
   }
 
-  if (island.tiles?.length > 0 && isAcrossStormBorder(state, ship.position, island.tiles[0])) {
-    return { error: 'Cannot attack across the storm border' };
-  }
+  // Note: no storm-border check here — the ship is docked at the island's own port,
+  // so by definition it's adjacent to the island. An attack can't meaningfully be
+  // "across" the storm border when the attacker is already at the target's dock.
 
   if (island.owner && hasTreaty(state, playerId, island.owner)) {
     return { error: 'You have a treaty with this player this turn' };
