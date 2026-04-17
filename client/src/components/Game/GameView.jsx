@@ -1268,6 +1268,16 @@ function findEnemyShipAt(gameState, col, row, excludePlayerId) {
 function findPath(gameState, start, target) {
   const { board, totalCols, totalRows, players } = gameState;
   const key = (c, r) => `${c},${r}`;
+  // Canonical wall key (matches server's wallKey and renderer's canonicalWallKey)
+  const wKey = (c1, r1, c2, r2) =>
+    (c1 < c2 || (c1 === c2 && r1 < r2))
+      ? `${c1},${r1}|${c2},${r2}`
+      : `${c2},${r2}|${c1},${r1}`;
+
+  const wallSet = new Set((gameState.walls || []).map(
+    w => wKey(w.col1, w.row1, w.col2, w.row2)
+  ));
+
   const visited = new Map();
   const queue = [{ col: start.col, row: start.row, parent: null }];
   visited.set(key(start.col, start.row), null);
@@ -1305,6 +1315,19 @@ function findPath(gameState, start, target) {
       const tile = board[nr][nc];
       if (tile.type !== 'sea' && tile.type !== 'port') continue;
       if (occupied.has(k) && !(nc === target.col && nr === target.row)) continue;
+
+      // Skip neighbors that are on the other side of a wall from current
+      if (wallSet.has(wKey(current.col, current.row, nc, nr))) continue;
+
+      // Port entry must come in through an open side (matches server validation)
+      if (tile.type === 'port' && tile.openSides) {
+        let approachDir;
+        if (dr === -1) approachDir = 'S';
+        else if (dr === 1) approachDir = 'N';
+        else if (dc === -1) approachDir = 'E';
+        else if (dc === 1) approachDir = 'W';
+        if (approachDir && !tile.openSides.includes(approachDir)) continue;
+      }
 
       visited.set(k, current);
       queue.push({ col: nc, row: nr, parent: current });
