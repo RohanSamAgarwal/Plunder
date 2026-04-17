@@ -15,7 +15,7 @@ import {
   createGameState, getPublicGameState, pickStartingIsland,
   getAvailableStartingIslands, drawResources, rollSailingDie,
   moveShip, buildItem, attackIsland, attackShip, endTurn, calculatePlunderPoints,
-  collectTreasure, resolveTreasureSteal, resolveTreasureStormDiscard, resolveStormCost, cancelStormMove,
+  collectTreasure, resolveTreasureSteal, resolveTreasureStormDiscard, resolveTreasureFreeUpgrade, resolveStormCost, cancelStormMove,
   merchantBankTrade, canTrade, proposeTreaty, resolveTreaty,
   shiplessRoll, shiplessExchangePP, shiplessExchangeGold,
   shiplessDisownIsland, shiplessChooseResource,
@@ -702,7 +702,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on(EVENTS.RESOLVE_TREASURE, ({ targetId, discards }, callback) => {
+  socket.on(EVENTS.RESOLVE_TREASURE, ({ targetId, discards, shipId }, callback) => {
     const found = getRoomBySocketId(socket.id);
     if (!found || !found.room.gameState) return callback?.({ error: 'No game' });
 
@@ -723,6 +723,8 @@ io.on('connection', (socket) => {
       }
     } else if (pending.type === 'storm_discard') {
       result = resolveTreasureStormDiscard(state, found.player.id, discards);
+    } else if (pending.type === 'free_upgrade') {
+      result = resolveTreasureFreeUpgrade(state, found.player.id, shipId);
     } else {
       return callback?.({ error: 'Unknown pending type' });
     }

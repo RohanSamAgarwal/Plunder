@@ -36,6 +36,7 @@ export default function ActionPanel({
   const [treatyOffer, setTreatyOffer] = useState({ ...EMPTY_RESOURCES });
   const [treasureTargetId, setTreasureTargetId] = useState('');
   const [treasureDiscards, setTreasureDiscards] = useState({ ...EMPTY_RESOURCES });
+  const [treasureUpgradeShipId, setTreasureUpgradeShipId] = useState('');
   const [shiplessFreeResource, setShiplessFreeResource] = useState('');
   const [shiplessRollResult, setShiplessRollResult] = useState(null);
   const [stormCostDiscards, setStormCostDiscards] = useState({ ...EMPTY_RESOURCES });
@@ -106,6 +107,12 @@ export default function ActionPanel({
     if (total !== pendingTreasure.amount) return;
     await emit('resolve-treasure', { discards: treasureDiscards });
     setTreasureDiscards({ ...EMPTY_RESOURCES });
+  }
+
+  async function resolveTreasureUpgrade() {
+    if (!treasureUpgradeShipId) return;
+    await emit('resolve-treasure', { shipId: treasureUpgradeShipId });
+    setTreasureUpgradeShipId('');
   }
 
   async function resolveStormCostDiscard() {
@@ -280,6 +287,50 @@ export default function ActionPanel({
           </button>
         </div>
       )}
+
+      {isTreasureMine && pendingTreasure.type === 'free_upgrade' && (() => {
+        const upgradeLabel =
+          pendingTreasure.upgrade === 'cannon' ? 'Free Cannon 💣'
+          : pendingTreasure.upgrade === 'mast' ? 'Free Mast ⛵'
+          : 'Free Life Peg ❤️';
+        const statLabel =
+          pendingTreasure.upgrade === 'cannon' ? 'cannons'
+          : pendingTreasure.upgrade === 'mast' ? 'masts'
+          : 'life pegs';
+        const statKey =
+          pendingTreasure.upgrade === 'cannon' ? 'cannons'
+          : pendingTreasure.upgrade === 'mast' ? 'masts'
+          : 'lifePegs';
+        const eligible = (pendingTreasure.eligibleShipIds || [])
+          .map(id => myPlayer.ships.find(s => s.id === id))
+          .filter(Boolean);
+        return (
+          <div className="bg-pirate-dark border border-pirate-gold rounded-lg p-3 space-y-2">
+            <h3 className="text-sm text-pirate-gold font-bold">Treasure: {upgradeLabel}</h3>
+            <p className="text-xs text-pirate-tan">Choose which ship to upgrade:</p>
+            <div className="space-y-1">
+              {eligible.map(s => {
+                const picked = treasureUpgradeShipId === s.id;
+                return (
+                  <button key={s.id} onClick={() => setTreasureUpgradeShipId(s.id)}
+                    className={`w-full text-left px-3 py-1.5 rounded text-xs border transition
+                                ${picked
+                                  ? 'bg-pirate-gold text-pirate-dark border-pirate-gold font-bold'
+                                  : 'bg-pirate-dark border-pirate-tan/30 text-white hover:border-pirate-gold/60'}`}>
+                    Ship at ({s.position.col}, {s.position.row}) &mdash;{' '}
+                    {s[statKey]} {statLabel}, {s.lifePegs} ❤️
+                  </button>
+                );
+              })}
+            </div>
+            <button onClick={resolveTreasureUpgrade} disabled={!treasureUpgradeShipId}
+              className="w-full bg-pirate-gold text-pirate-dark py-1.5 rounded text-xs font-bold
+                         hover:bg-yellow-400 disabled:opacity-40 disabled:cursor-not-allowed transition">
+              Apply Upgrade
+            </button>
+          </div>
+        );
+      })()}
 
       {/* ══════ Pending Storm Cost ══════ */}
       {isStormCostMine && (

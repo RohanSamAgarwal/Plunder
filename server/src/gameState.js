@@ -903,30 +903,35 @@ function applyTreasureCard(state, playerId, card) {
     case 'end_turn': {
       return { success: true, card, applied: true, endsTurn: true };
     }
-    case 'free_cannon': {
-      // Find a ship that can receive a cannon
-      const eligibleShip = player.ships.find(s => s.cannons < MAX_CANNONS);
-      if (eligibleShip) {
-        eligibleShip.cannons++;
-        return { success: true, card, applied: true, upgradedShip: eligibleShip.id };
-      }
-      return { success: true, card, applied: false, noEligibleShip: true };
-    }
-    case 'free_mast': {
-      const eligibleShip = player.ships.find(s => s.masts < MAX_MASTS);
-      if (eligibleShip) {
-        eligibleShip.masts++;
-        return { success: true, card, applied: true, upgradedShip: eligibleShip.id };
-      }
-      return { success: true, card, applied: false, noEligibleShip: true };
-    }
+    case 'free_cannon':
+    case 'free_mast':
     case 'free_life': {
-      const eligibleShip = player.ships.find(s => s.lifePegs < MAX_LIFE_PEGS);
-      if (eligibleShip) {
-        eligibleShip.lifePegs++;
-        return { success: true, card, applied: true, upgradedShip: eligibleShip.id };
+      const upgrade = card.type === 'free_cannon' ? 'cannon'
+                    : card.type === 'free_mast'   ? 'mast'
+                    : 'life';
+      const max = upgrade === 'cannon' ? MAX_CANNONS
+                : upgrade === 'mast'   ? MAX_MASTS
+                : MAX_LIFE_PEGS;
+      const field = upgrade === 'cannon' ? 'cannons'
+                  : upgrade === 'mast'   ? 'masts'
+                  : 'lifePegs';
+      const eligibleShips = player.ships.filter(s => s[field] < max);
+      if (eligibleShips.length === 0) {
+        return { success: true, card, applied: false, noEligibleShip: true };
       }
-      return { success: true, card, applied: false, noEligibleShip: true };
+      if (eligibleShips.length === 1) {
+        eligibleShips[0][field]++;
+        return { success: true, card, applied: true, upgradedShip: eligibleShips[0].id };
+      }
+      // Multiple eligible ships: let the player choose
+      state.pendingTreasure = {
+        type: 'free_upgrade',
+        upgrade,
+        playerId,
+        eligibleShipIds: eligibleShips.map(s => s.id),
+        card,
+      };
+      return { success: true, card, applied: false, needsShipSelection: true, upgrade };
     }
     case 'lose_resource': {
       const loseType = card.resource;
@@ -1002,6 +1007,36 @@ export function resolveTreasureStormDiscard(state, playerId, discards) {
 
   state.pendingTreasure = null;
   return { success: true, discarded: discards };
+}
+
+// Apply a free-upgrade treasure card to a player-chosen ship
+export function resolveTreasureFreeUpgrade(state, playerId, shipId) {
+  if (!state.pendingTreasure || state.pendingTreasure.type !== 'free_upgrade') {
+    return { error: 'No pending free upgrade' };
+  }
+  if (state.pendingTreasure.playerId !== playerId) {
+    return { error: 'Not your pending treasure' };
+  }
+  if (!state.pendingTreasure.eligibleShipIds.includes(shipId)) {
+    return { error: 'That ship is not eligible' };
+  }
+
+  const player = state.players[playerId];
+  const ship = player.ships.find(s => s.id === shipId);
+  if (!ship) return { error: 'Ship not found' };
+
+  const { upgrade } = state.pendingTreasure;
+  const field = upgrade === 'cannon' ? 'cannons'
+              : upgrade === 'mast'   ? 'masts'
+              : 'lifePegs';
+  const max = upgrade === 'cannon' ? MAX_CANNONS
+            : upgrade === 'mast'   ? MAX_MASTS
+            : MAX_LIFE_PEGS;
+  if (ship[field] >= max) return { error: 'Ship already at max for this upgrade' };
+
+  ship[field]++;
+  state.pendingTreasure = null;
+  return { success: true, upgrade, upgradedShip: shipId };
 }
 
 // Resolve storm entry/exit cost — player chooses which resources to pay
