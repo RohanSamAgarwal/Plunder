@@ -13,7 +13,10 @@ export default function Lobby({ room, playerInfo, messages, onStartGame }) {
   const [copied, setCopied] = useState(false);
 
   const isHost = playerInfo?.playerId === room.hostId;
-  const inviteLink = `${window.location.origin}/game/${room.code}`;
+  // BASE_URL is "/plunder/" in production (set in vite.config.js) and "/"
+  // in dev, so this produces the correct public URL in both modes.
+  const base = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
+  const inviteLink = `${window.location.origin}${base}/game/${room.code}`;
 
   function copyLink() {
     navigator.clipboard.writeText(inviteLink);

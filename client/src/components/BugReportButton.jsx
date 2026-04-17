@@ -53,14 +53,20 @@ export default function BugReportButton() {
           <div className="bg-pirate-brown border border-pirate-tan/30 p-5 rounded-lg shadow-lg
                           shadow-black/50 w-full max-w-sm mx-4">
             <h3 className="text-pirate-gold font-pirate text-lg mb-2">Report a Bug</h3>
-            <p className="text-pirate-tan/70 text-xs mb-3">
+            <p className="text-pirate-tan/70 text-xs mb-1">
               Describe your bug as thoroughly as possible.
+            </p>
+            <p className="text-pirate-tan/50 text-[10px] mb-3 italic leading-snug">
+              Tip: these reports are handed to an AI to diagnose. The more
+              detail you give — exact steps, what you expected, what actually
+              happened, and the room code if you remember it — the better
+              it can fix it.
             </p>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="What went wrong?"
-              rows={5}
+              placeholder="Steps to reproduce / what you expected / what happened..."
+              rows={6}
               maxLength={2000}
               autoFocus
               className="w-full bg-pirate-dark border border-pirate-tan/20 rounded px-3 py-2
