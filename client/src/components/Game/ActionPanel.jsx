@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 const BUILD_COSTS = {
   ship: { wood: 2, iron: 1, rum: 0, gold: 2 },
@@ -20,7 +20,7 @@ const EMPTY_RESOURCES = { wood: 0, iron: 0, rum: 0, gold: 0 };
 export default function ActionPanel({
   gameState, myPlayer, isMyTurn, turnPhase, phase,
   selectedShip, onDrawResources, onRollDie, onBuild, onEndTurn, emit,
-  pendingTreaty,
+  pendingTreaty, panelAutoOpen,
 }) {
   const [showTrade, setShowTrade] = useState(false);
   const [tradeTarget, setTradeTarget] = useState('');
@@ -41,6 +41,14 @@ export default function ActionPanel({
   const [stormCostDiscards, setStormCostDiscards] = useState({ ...EMPTY_RESOURCES });
   const [rerollCost, setRerollCost] = useState({ ...EMPTY_RESOURCES });
   const [showRerollPicker, setShowRerollPicker] = useState(null); // 'sailing' | 'shipless_0' | 'shipless_1' | null
+
+  // Auto-open section when parent signals (e.g. after port arrival prompt click)
+  useEffect(() => {
+    if (!panelAutoOpen) return;
+    if (panelAutoOpen.section === 'merchant') setShowMerchant(true);
+    else if (panelAutoOpen.section === 'trade') setShowTrade(true);
+    else if (panelAutoOpen.section === 'build') setShowBuild(true);
+  }, [panelAutoOpen?.key]);
 
   if (!myPlayer) return null;
 

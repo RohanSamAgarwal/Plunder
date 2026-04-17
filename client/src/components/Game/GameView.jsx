@@ -3,6 +3,7 @@ import { useSocketContext } from '../../App';
 import { drawBoard, canvasToGrid, getValidMoves, calculateLayout } from '../../game/renderer';
 import ActionPanel from './ActionPanel';
 import ChatLog from './ChatLog';
+import PortArrivalPrompt from './PortArrivalPrompt';
 import DiceRoll3D from './DiceRoll3D';
 import CannonFireAnimation from './CannonFireAnimation';
 import CombatAnimation from './CombatAnimation';
@@ -57,6 +58,8 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
   const [treasuresFound, setTreasuresFound] = useState([]);
   const [bribeOffer, setBribeOffer] = useState({ ...EMPTY_RESOURCES });
   const [bribeSubmitted, setBribeSubmitted] = useState(false);
+  const [portArrivalShipId, setPortArrivalShipId] = useState(null);
+  const [panelAutoOpen, setPanelAutoOpen] = useState(null); // { section, key } | null
   const [activeTab, setActiveTab] = useState('controls');
   const [unreadCount, setUnreadCount] = useState(0);
   const activeTabRef = useRef('controls');
@@ -65,6 +68,16 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
   useEffect(() => {
     if (!pendingAttackBribe) setBribeSubmitted(false);
   }, [pendingAttackBribe]);
+
+  // Clear port arrival prompt when the user deselects or selects a different ship
+  useEffect(() => {
+    if (!selectedShip || selectedShip.id !== portArrivalShipId) {
+      if (portArrivalShipId) setPortArrivalShipId(null);
+    }
+  }, [selectedShip, portArrivalShipId]);
+
+  // Clear port arrival prompt on turn change
+  useEffect(() => { setPortArrivalShipId(null); }, [gameState?.turnNumber]);
 
   // Turn timer countdown
   const [turnElapsed, setTurnElapsed] = useState(0);
@@ -310,11 +323,19 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
       if (isValid) {
         const path = findPath(gameState, selectedShip.position, { col, row });
         if (path.length > 0) {
-          emit(EVENTS.MOVE_SHIP, { shipId: selectedShip.id, path }).then(result => {
+          const shipIdMoving = selectedShip.id;
+          const destTile = gameState.board?.[row]?.[col];
+          const arrivedAtPort = destTile?.type === 'port';
+          emit(EVENTS.MOVE_SHIP, { shipId: shipIdMoving, path }).then(result => {
             if (result?.error) notify(result.error);
             else {
-              setSelectedShip(null);
               setValidMoves([]);
+              if (arrivedAtPort) {
+                // Keep ship selected so ActionPanel shortcuts remain visible
+                setPortArrivalShipId(shipIdMoving);
+              } else {
+                setSelectedShip(null);
+              }
               if (result.treasuresOnPath?.length > 0) {
                 setTreasuresFound(result.treasuresOnPath);
               }
@@ -722,6 +743,20 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
             </button>
           </div>
         </div>
+      )}
+
+      {/* ═══ Port Arrival Prompt ═══ */}
+      {portArrivalShipId && selectedShip && selectedShip.id === portArrivalShipId && isMyTurn && (
+        <PortArrivalPrompt
+          ship={selectedShip}
+          gameState={gameState}
+          myPlayer={myPlayer}
+          emit={emit}
+          onDismiss={() => setPortArrivalShipId(null)}
+          onOpenMerchant={() => setPanelAutoOpen({ section: 'merchant', key: Date.now() })}
+          onOpenTrade={() => setPanelAutoOpen({ section: 'trade', key: Date.now() })}
+          onOpenBuild={() => setPanelAutoOpen({ section: 'build', key: Date.now() })}
+        />
       )}
 
       {/* ═══ Turn Timer Vote Popup ═══ */}
@@ -1205,6 +1240,7 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
               onEndTurn={handleEndTurn}
               emit={emit}
               pendingTreaty={pendingTreaty}
+              panelAutoOpen={panelAutoOpen}
             />
           ) : (
             <ChatLog messages={messages} emit={emit} />

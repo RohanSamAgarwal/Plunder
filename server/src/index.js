@@ -360,8 +360,10 @@ io.on('connection', (socket) => {
     if (oldPosition && result.newPosition) {
       const destTile = state.board?.[result.newPosition.row]?.[result.newPosition.col];
       io.to(found.room.code).emit(EVENTS.SHIP_MOVED, {
+        playerId: found.player.id,
         playerName: found.player.name,
         playerColor: found.player.color,
+        shipId,
         path: [oldPosition, ...path],
         arrivedAtPort: destTile?.type === 'port' || false,
         ship: shipInfo,
