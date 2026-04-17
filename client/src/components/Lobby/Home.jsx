@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSocketContext, usePlayerContext } from '../../App';
+import GameLogsModal from './GameLogsModal';
 
 const EVENTS = {
   CREATE_ROOM: 'create-room',
@@ -26,6 +27,39 @@ function clearSavedSession() {
   } catch { /* ignore */ }
 }
 
+// Game log history — one entry per game the player has been in. Capped to
+// the most recent N so localStorage doesn't grow unbounded.
+const GAME_HISTORY_KEY = 'plunder_game_history';
+const GAME_HISTORY_MAX = 25;
+
+function loadGameHistory() {
+  try {
+    const raw = localStorage.getItem(GAME_HISTORY_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch { return []; }
+}
+
+export function saveGameHistoryEntry(entry) {
+  try {
+    const prev = loadGameHistory();
+    // Dedupe by code — update existing entry so the most recent timestamp wins
+    const filtered = prev.filter(e => e.code !== entry.code);
+    filtered.unshift({ ...entry, lastSeenAt: Date.now() });
+    const trimmed = filtered.slice(0, GAME_HISTORY_MAX);
+    localStorage.setItem(GAME_HISTORY_KEY, JSON.stringify(trimmed));
+  } catch { /* ignore */ }
+}
+
+function removeGameHistoryEntry(code) {
+  try {
+    const prev = loadGameHistory();
+    const filtered = prev.filter(e => e.code !== code);
+    localStorage.setItem(GAME_HISTORY_KEY, JSON.stringify(filtered));
+  } catch { /* ignore */ }
+}
+
 export default function Home() {
   const { emit, connected } = useSocketContext();
   const { setPlayerInfo } = usePlayerContext();
@@ -36,6 +70,7 @@ export default function Home() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [savedSession, setSavedSession] = useState(() => loadSavedSession());
+  const [logsOpen, setLogsOpen] = useState(false);
 
   async function handleCreate() {
     if (!name.trim()) return setError('Enter your pirate name!');
@@ -57,6 +92,14 @@ export default function Home() {
     };
     setPlayerInfo(info);
     try { localStorage.setItem('plunder_session', JSON.stringify(info)); } catch {}
+    if (result.logToken) {
+      saveGameHistoryEntry({
+        code: result.code,
+        name: name.trim(),
+        logToken: result.logToken,
+        role: 'host',
+      });
+    }
     navigate(`/game/${result.code}`);
   }
 
@@ -85,6 +128,14 @@ export default function Home() {
     };
     setPlayerInfo(info);
     try { localStorage.setItem('plunder_session', JSON.stringify(info)); } catch {}
+    if (result.logToken) {
+      saveGameHistoryEntry({
+        code: result.code,
+        name: name.trim(),
+        logToken: result.logToken,
+        role: 'guest',
+      });
+    }
     navigate(`/game/${result.code}`);
   }
 
@@ -219,7 +270,17 @@ export default function Home() {
         <p className="text-center text-gray-500 text-xs mt-4">
           2–6 players • ~60 minutes • No account needed
         </p>
+
+        <div className="text-center mt-2">
+          <button
+            onClick={() => setLogsOpen(true)}
+            className="text-pirate-tan/50 hover:text-pirate-gold text-[11px] underline underline-offset-2 transition">
+            📜 Previous game logs
+          </button>
+        </div>
       </div>
+
+      <GameLogsModal open={logsOpen} onClose={() => setLogsOpen(false)} />
     </div>
   );
 }

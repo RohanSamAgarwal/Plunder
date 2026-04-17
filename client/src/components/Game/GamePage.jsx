@@ -109,6 +109,24 @@ export default function GamePage() {
           if (result.gameState) {
             setGameState(result.gameState);
           }
+          // Refresh the history entry so this game appears at the top of
+          // "Previous Game Logs".
+          if (result.logToken) {
+            try {
+              const raw = localStorage.getItem('plunder_game_history');
+              const prev = raw ? JSON.parse(raw) : [];
+              const filtered = (Array.isArray(prev) ? prev : [])
+                .filter(e => e.code !== result.code);
+              filtered.unshift({
+                code: result.code,
+                name: info.name,
+                logToken: result.logToken,
+                role: 'guest',
+                lastSeenAt: Date.now(),
+              });
+              localStorage.setItem('plunder_game_history', JSON.stringify(filtered.slice(0, 25)));
+            } catch { /* ignore */ }
+          }
         }
       });
     } else {
@@ -374,6 +392,23 @@ export default function GamePage() {
     setRoom(result.room);
     setNeedsJoin(false);
     if (result.gameState) setGameState(result.gameState);
+    // Save this game to the local history so "Previous Game Logs" can find it
+    if (result.logToken) {
+      try {
+        const raw = localStorage.getItem('plunder_game_history');
+        const prev = raw ? JSON.parse(raw) : [];
+        const filtered = (Array.isArray(prev) ? prev : [])
+          .filter(e => e.code !== result.code);
+        filtered.unshift({
+          code: result.code,
+          name: joinName.trim(),
+          logToken: result.logToken,
+          role: 'guest',
+          lastSeenAt: Date.now(),
+        });
+        localStorage.setItem('plunder_game_history', JSON.stringify(filtered.slice(0, 25)));
+      } catch { /* ignore */ }
+    }
   }
 
   // Join-from-link screen

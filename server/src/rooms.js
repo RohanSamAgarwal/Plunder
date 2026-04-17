@@ -34,6 +34,7 @@ export function createRoom(hostSocketId, hostName) {
   const room = {
     code,
     hostId,
+    logToken: uuid(), // shared across players in this room; used to fetch the game log
     players: [{
       id: hostId,
       socketId: hostSocketId,

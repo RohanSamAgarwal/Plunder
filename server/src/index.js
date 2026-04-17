@@ -109,6 +109,35 @@ app.post('/api/bugs', async (req, res) => {
   }
 });
 
+// Fetch a per-game log by room code. Access is gated by the logToken that
+// was issued when the room was created (and included in the first line of
+// the game log). Anyone who was in the game will have it in localStorage.
+app.get('/api/game-log/:code', (req, res) => {
+  const code = String(req.params.code || '').toUpperCase();
+  const provided = req.query.logToken
+    || (req.headers.authorization?.startsWith('Bearer ')
+        ? req.headers.authorization.slice(7)
+        : null);
+  if (!provided) return res.status(401).json({ error: 'logToken required' });
+
+  const entries = logger.readGameLog(code);
+  if (entries.length === 0) {
+    return res.status(404).json({ error: 'No log for that room code' });
+  }
+  // The first entry is room_created with the logToken. Verify it.
+  const first = entries[0];
+  const expected = first?.logToken;
+  if (!expected || expected !== provided) {
+    return res.status(403).json({ error: 'Invalid logToken for this room' });
+  }
+  // Strip the logToken from the first entry before returning to avoid leaking
+  // it back through the API response.
+  const sanitizedFirst = { ...first };
+  delete sanitizedFirst.logToken;
+  const returned = [sanitizedFirst, ...entries.slice(1)];
+  res.json({ code, count: returned.length, entries: returned });
+});
+
 // Admin: fetch the most recent log entries. Requires LOG_ACCESS_TOKEN env var
 // to be set on the server; caller provides it via `?token=` or Authorization
 // header. If LOG_ACCESS_TOKEN is unset, the endpoint returns 503 so it can't be
@@ -151,9 +180,15 @@ io.on('connection', (socket) => {
       code: room.code,
       playerId: player.id,
       sessionToken: player.sessionToken,
+      logToken: room.logToken,
       room: getPublicRoomState(room),
     });
-    logger.info('room_created', { code: room.code, hostName: name, socketId: socket.id });
+    // Record the room's log token as the very first line of the per-game log
+    // so that later fetches can verify access without relying on in-memory
+    // room state (which is lost on server restart).
+    logger.gameLog(room.code, 'room_created', {
+      hostName: name, hostId: player.id, logToken: room.logToken,
+    });
   });
 
   socket.on(EVENTS.JOIN_ROOM, ({ code, name, sessionToken }, callback) => {
@@ -167,6 +202,7 @@ io.on('connection', (socket) => {
           code: room.code,
           playerId: result.player.id,
           sessionToken: result.player.sessionToken,
+          logToken: room.logToken,
           room: getPublicRoomState(room),
           reconnected: true,
           gameState: room.gameState
@@ -177,8 +213,7 @@ io.on('connection', (socket) => {
           playerId: result.player.id,
           name: result.player.name,
         });
-        logger.info('player_reconnected', {
-          code: room.code,
+        logger.gameLog(room.code, 'player_reconnected', {
           name: result.player.name,
           playerId: result.player.id,
         });
@@ -199,6 +234,7 @@ io.on('connection', (socket) => {
       code: room.code,
       playerId: player.id,
       sessionToken: player.sessionToken,
+      logToken: room.logToken,
       room: getPublicRoomState(room),
     });
 
@@ -211,7 +247,7 @@ io.on('connection', (socket) => {
       room: getPublicRoomState(room),
     });
 
-    logger.info('player_joined', { code: room.code, name, reconnected: !!sessionToken });
+    logger.gameLog(room.code, 'player_joined', { name, playerId: player.id });
   });
 
   socket.on(EVENTS.CHOOSE_COLOR, ({ color }, callback) => {
@@ -284,7 +320,10 @@ io.on('connection', (socket) => {
     }
 
     callback({ success: true });
-    logger.info('game_started', { code: room.code, playerCount: room.players.length });
+    logger.gameLog(room.code, 'game_started', {
+      players: room.players.map(p => ({ id: p.id, name: p.name, color: p.color })),
+      settings: room.settings,
+    });
   });
 
   // --- GAMEPLAY ---
@@ -297,9 +336,18 @@ io.on('connection', (socket) => {
     const result = pickStartingIsland(state, found.player.id, islandId);
     if (result.error) return callback?.({ error: result.error });
 
+    logger.gameLog(found.room.code, 'starting_island_picked', {
+      playerId: found.player.id,
+      playerName: found.player.name,
+      islandId,
+    });
+
     // Start turn timers when gameplay begins
     if (state.phase === 'gameplay') {
       startTurnTimers(found.room, io, broadcastGameState);
+      logger.gameLog(found.room.code, 'gameplay_phase_begin', {
+        firstPlayer: state.players[state.turnOrder[state.currentPlayerIndex]]?.name,
+      });
     }
 
     broadcastGameState(found.room);
@@ -362,6 +410,12 @@ io.on('connection', (socket) => {
       playerName: found.player.name,
       ...result,
     });
+    logger.gameLog(found.room.code, 'sailing_die_rolled', {
+      playerName: found.player.name,
+      roll: result.roll,
+      totalMovePoints: result.totalMovePoints,
+      stormMoved: !!result.stormMoved,
+    });
 
     // If storm moved, broadcast storm animation
     if (result.stormMoved && state.storm) {
@@ -393,14 +447,23 @@ io.on('connection', (socket) => {
     // Broadcast movement path for animation
     if (oldPosition && result.newPosition) {
       const destTile = state.board?.[result.newPosition.row]?.[result.newPosition.col];
+      const arrivedAtPort = destTile?.type === 'port' || false;
       io.to(found.room.code).emit(EVENTS.SHIP_MOVED, {
         playerId: found.player.id,
         playerName: found.player.name,
         playerColor: found.player.color,
         shipId,
         path: [oldPosition, ...path],
-        arrivedAtPort: destTile?.type === 'port' || false,
+        arrivedAtPort,
         ship: shipInfo,
+      });
+      logger.gameLog(found.room.code, 'ship_moved', {
+        playerName: found.player.name,
+        shipId,
+        from: oldPosition,
+        to: result.newPosition,
+        pathLen: path.length,
+        arrivedAtPort,
       });
     }
   });
@@ -416,6 +479,11 @@ io.on('connection', (socket) => {
 
     broadcastGameState(found.room);
     callback?.(result);
+    if (result.success) {
+      logger.gameLog(found.room.code, 'cannons_jettisoned', {
+        playerName: found.player.name, shipId, count,
+      });
+    }
   });
 
   // Building is allowed at any time during the player's turn
@@ -437,6 +505,12 @@ io.on('connection', (socket) => {
       io.to(found.room.code).emit(EVENTS.BUILT, {
         playerName: found.player.name,
         buildType,
+        location: ship?.position || null,
+      });
+      logger.gameLog(found.room.code, 'built', {
+        playerName: found.player.name,
+        buildType,
+        shipId: ship?.id || null,
         location: ship?.position || null,
       });
     }
@@ -465,9 +539,15 @@ io.on('connection', (socket) => {
         });
       }
       callback?.({ success: true, pending: true });
+      logger.gameLog(found.room.code, 'island_attack_pending_bribe', {
+        attackerName: found.player.name, shipId, islandId,
+      });
     } else if (result.pendingReroll) {
       // Combat reroll flow: dice rolled, awaiting reroll decisions
       callback?.({ success: true, pendingReroll: true });
+      logger.gameLog(found.room.code, 'island_attack_pending_reroll', {
+        attackerName: found.player.name, shipId, islandId,
+      });
     } else {
       callback?.(result);
       const island = state.islands[islandId];
@@ -481,6 +561,15 @@ io.on('connection', (socket) => {
         attackerLocation: attackerShipForIsland?.position || null,
         defenderLocation: island?.port || null,
         ...result,
+      });
+      logger.gameLog(found.room.code, 'island_combat_result', {
+        attackerName: found.player.name,
+        islandId,
+        islandName: island?.name || null,
+        defender: island?.owner ? state.players[island.owner]?.name || 'Island' : 'Island',
+        attackRoll: result.attackRoll,
+        defenseRoll: result.defenseRoll,
+        won: result.won,
       });
     }
   });
@@ -508,9 +597,15 @@ io.on('connection', (socket) => {
         });
       }
       callback?.({ success: true, pending: true });
+      logger.gameLog(found.room.code, 'ship_attack_pending_bribe', {
+        attackerName: found.player.name, attackerShipId, defenderShipId,
+      });
     } else if (result.pendingReroll) {
       // Combat reroll flow: dice rolled, awaiting reroll decisions
       callback?.({ success: true, pendingReroll: true });
+      logger.gameLog(found.room.code, 'ship_attack_pending_reroll', {
+        attackerName: found.player.name, attackerShipId, defenderShipId,
+      });
     } else {
       callback?.(result);
       // Find attacker/defender ship positions and defender name for the animation
@@ -529,6 +624,15 @@ io.on('connection', (socket) => {
         attackerLocation: attackerShip?.position || null,
         defenderLocation: defenderShip?.position || null,
         ...result,
+      });
+      logger.gameLog(found.room.code, 'ship_combat_result', {
+        attackerName: found.player.name,
+        defenderName,
+        attackerShipId,
+        defenderShipId,
+        attackRoll: result.attackRoll,
+        defenseRoll: result.defenseRoll,
+        attackerWon: result.attackerWon,
       });
     }
   });
@@ -558,6 +662,10 @@ io.on('connection', (socket) => {
       });
     }
     callback?.({ success: true });
+    logger.gameLog(found.room.code, 'bribe_offered', {
+      defenderName: found.player.name,
+      offer: result.offer,
+    });
   });
 
   socket.on(EVENTS.ATTACK_BRIBE_RESOLVE, ({ decision }, callback) => {
@@ -579,6 +687,12 @@ io.on('connection', (socket) => {
       combat: result.combat || null,
       bribe: result.bribe || null,
       attackCancelled: result.attackCancelled || false,
+    });
+    logger.gameLog(found.room.code, 'bribe_resolved', {
+      attackerName: found.player.name,
+      decision,
+      outcome: result.outcome,
+      attackCancelled: !!result.attackCancelled,
     });
 
     // Also emit COMBAT_RESULT if combat happened and resolved (not pending reroll)
@@ -719,6 +833,11 @@ io.on('connection', (socket) => {
         playerName: found.player.name,
         card: result.card,
       });
+      logger.gameLog(found.room.code, 'treasure_collected', {
+        playerName: found.player.name,
+        cardType: result.card?.type,
+        cardDescription: result.card?.description,
+      });
     }
 
     if (result.reshuffled) {
@@ -732,6 +851,11 @@ io.on('connection', (socket) => {
       broadcastGameState(found.room);
       const nextName = state.players[endResult.nextPlayer]?.name || 'Unknown';
       io.to(found.room.code).emit(EVENTS.TURN_ENDED, { ...endResult, nextPlayerName: nextName });
+      logger.gameLog(found.room.code, 'turn_ended', {
+        previousPlayer: found.player.name,
+        nextPlayer: nextName,
+        reason: 'treasure_end_turn',
+      });
       startTurnTimers(found.room, io, broadcastGameState);
     }
   });
@@ -765,6 +889,14 @@ io.on('connection', (socket) => {
 
     broadcastGameState(found.room);
     callback?.(result);
+    if (result?.success) {
+      logger.gameLog(found.room.code, 'treasure_resolved', {
+        playerName: found.player.name,
+        type: pending.type,
+        targetId: targetId || undefined,
+        shipId: shipId || undefined,
+      });
+    }
   });
 
   // --- STORM COST ---
@@ -830,6 +962,11 @@ io.on('connection', (socket) => {
       }
     }
     callback?.({ success: true });
+    logger.gameLog(found.room.code, 'trade_proposed', {
+      fromName: found.player.name,
+      toName: targetPlayer?.name || null,
+      offer, request,
+    });
   });
 
   socket.on(EVENTS.RESPOND_TRADE, ({ accepted }, callback) => {
@@ -914,6 +1051,10 @@ io.on('connection', (socket) => {
       }
     }
     callback?.({ success: true, accepted });
+    logger.gameLog(found.room.code, 'trade_resolved', {
+      fromName, toName, accepted,
+      offer: trade.offer, request: trade.request,
+    });
   });
 
   // --- MERCHANT BANK TRADE ---
@@ -930,6 +1071,11 @@ io.on('connection', (socket) => {
     const result = merchantBankTrade(state, found.player.id, give, receive);
     broadcastGameState(found.room);
     callback?.(result);
+    if (result?.success) {
+      logger.gameLog(found.room.code, 'merchant_trade', {
+        playerName: found.player.name, give, receive,
+      });
+    }
   });
 
   // --- TREATY ---
@@ -955,6 +1101,10 @@ io.on('connection', (socket) => {
       }
     }
     callback?.({ success: true });
+    logger.gameLog(found.room.code, 'treaty_proposed', {
+      proposerName: found.player.name,
+      targetName: targetPlayer?.name || null, offer,
+    });
   });
 
   socket.on(EVENTS.RESPOND_TREATY, ({ accepted, proposerId, offer }, callback) => {
@@ -971,6 +1121,12 @@ io.on('connection', (socket) => {
       targetId: found.player.id,
     });
     callback?.(result);
+    const proposerName = state.players[proposerId]?.name || 'Unknown';
+    logger.gameLog(found.room.code, 'treaty_resolved', {
+      proposerName,
+      targetName: found.player.name,
+      accepted,
+    });
   });
 
   // --- SHIPLESS CAPTAIN ---
@@ -1057,6 +1213,11 @@ io.on('connection', (socket) => {
 
     const nextPlayerName = state.players[result.nextPlayer]?.name || 'Unknown';
     io.to(found.room.code).emit(EVENTS.TURN_ENDED, { ...result, nextPlayerName });
+    logger.gameLog(found.room.code, 'turn_ended', {
+      previousPlayer: found.player.name,
+      nextPlayer: nextPlayerName,
+      reason: 'normal',
+    });
 
     startTurnTimers(found.room, io, broadcastGameState);
   });
@@ -1099,18 +1260,32 @@ io.on('connection', (socket) => {
     }
     logger.info('socket_disconnected', {
       socketId: socket.id,
-      reason, // e.g. 'transport close', 'client namespace disconnect', 'ping timeout'
+      reason,
       name: playerName,
       code: roomCode,
       gameInProgress,
     });
+    if (roomCode) {
+      // Also append to the per-game log so a game log alone is enough to debug
+      logger.gameLog(roomCode, 'player_disconnected', {
+        name: playerName, reason, gameInProgress,
+      });
+    }
   });
 });
 
 function broadcastGameState(room) {
-  // Stop timers if game ended
-  if (room.gameState?.phase === 'game_over') {
+  // Log game_over exactly once, when the phase transitions into it
+  if (room.gameState?.phase === 'game_over' && !room._gameOverLogged) {
+    room._gameOverLogged = true;
     stopTurnTimers(room);
+    const winnerId = room.gameState.winner;
+    const winnerName = winnerId ? room.gameState.players[winnerId]?.name : null;
+    logger.gameLog(room.code, 'game_over', {
+      winnerId,
+      winnerName,
+      turnNumber: room.gameState.turnNumber,
+    });
   }
   for (const player of room.players) {
     if (!player.connected) continue;

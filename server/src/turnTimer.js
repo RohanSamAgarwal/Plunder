@@ -1,5 +1,6 @@
 import { EVENTS } from '../../shared/constants.js';
 import { forceEndTurn } from './gameState.js';
+import { logger } from './logger.js';
 
 // === TURN TIMER & VOTE-TO-SKIP MODULE ===
 
@@ -63,6 +64,10 @@ function onSoftTimerFired(room) {
     currentPlayerId,
     currentPlayerName: state.players[currentPlayerId]?.name || 'Unknown',
   });
+  logger.gameLog(room.code, 'skip_vote_started', {
+    currentPlayer: state.players[currentPlayerId]?.name || 'Unknown',
+    eligibleVoters: eligible.length,
+  });
 }
 
 function onHardTimerFired(room) {
@@ -80,6 +85,11 @@ function onHardTimerFired(room) {
   const nextName = state.players[result.nextPlayer]?.name || 'Unknown';
   io.to(room.code).emit(EVENTS.TURN_TIMER_EXPIRED, { skippedPlayerName: skippedName });
   io.to(room.code).emit(EVENTS.TURN_ENDED, { ...result, nextPlayerName: nextName });
+  logger.gameLog(room.code, 'turn_ended', {
+    previousPlayer: skippedName,
+    nextPlayer: nextName,
+    reason: 'hard_timer_expired',
+  });
 
   startTurnTimers(room, io, broadcastFn);
 }
@@ -149,10 +159,18 @@ function resolveVoteIfReady(room) {
       skippedPlayerName: skippedName,
     });
     io.to(room.code).emit(EVENTS.TURN_ENDED, { ...result, nextPlayerName: nextName });
+    logger.gameLog(room.code, 'turn_ended', {
+      previousPlayer: skippedName,
+      nextPlayer: nextName,
+      reason: 'skip_vote_passed',
+      yesVotes: yesCount,
+      noVotes: noCount,
+    });
     startTurnTimers(room, io, broadcastFn);
   } else {
     // Vote failed — clear vote state, hard timer continues
     room.skipVote = null;
     io.to(room.code).emit(EVENTS.TURN_TIMER_VOTE_RESULT, { passed: false });
+    logger.gameLog(room.code, 'skip_vote_failed', { yesVotes: yesCount, noVotes: noCount });
   }
 }
