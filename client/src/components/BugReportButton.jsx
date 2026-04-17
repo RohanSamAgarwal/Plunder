@@ -10,6 +10,16 @@ export default function BugReportButton() {
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState(null);
 
+  // Prefer the room code from the URL (most authoritative for "where I was
+  // when I hit the bug"); fall back to the saved session's room code.
+  function detectRoomCode() {
+    try {
+      const m = window.location.pathname.match(/\/game\/([^/?#]+)/);
+      if (m && m[1]) return m[1].toUpperCase();
+    } catch { /* ignore */ }
+    return playerInfo?.roomCode || null;
+  }
+
   async function handleSubmit() {
     if (!description.trim()) return;
     setSubmitting(true);
@@ -18,7 +28,13 @@ export default function BugReportButton() {
       const res = await fetch(`${API_URL}/api/bugs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ description: description.trim(), playerName: playerInfo?.name }),
+        body: JSON.stringify({
+          description: description.trim(),
+          playerName: playerInfo?.name || null,
+          roomCode: detectRoomCode(),
+          url: window.location.href,
+          userAgent: navigator.userAgent,
+        }),
       });
       if (!res.ok) throw new Error('Server error');
       setFeedback('Bug report sent! Thank you.');
@@ -58,10 +74,31 @@ export default function BugReportButton() {
             </p>
             <p className="text-pirate-tan/50 text-[10px] mb-3 italic leading-snug">
               Tip: these reports are handed to an AI to diagnose. The more
-              detail you give — exact steps, what you expected, what actually
-              happened, and the room code if you remember it — the better
-              it can fix it.
+              detail you give — exact steps, what you expected, and what
+              actually happened — the better it can fix it.
             </p>
+            {(() => {
+              const detectedCode = (() => {
+                try {
+                  const m = window.location.pathname.match(/\/game\/([^/?#]+)/);
+                  if (m && m[1]) return m[1].toUpperCase();
+                } catch { /* ignore */ }
+                return playerInfo?.roomCode || null;
+              })();
+              if (!playerInfo?.name && !detectedCode) return null;
+              return (
+                <p className="text-pirate-tan/60 text-[10px] mb-2 bg-pirate-dark/40 rounded px-2 py-1">
+                  Attaching:{' '}
+                  {playerInfo?.name && (
+                    <>player <span className="text-white font-bold">{playerInfo.name}</span></>
+                  )}
+                  {playerInfo?.name && detectedCode && ' • '}
+                  {detectedCode && (
+                    <>room <span className="text-white font-mono">{detectedCode}</span></>
+                  )}
+                </p>
+              );
+            })()}
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}

@@ -67,7 +67,7 @@ app.get('/api/room/:code', (req, res) => {
 
 // Bug report endpoint — creates a GitHub Issue
 app.post('/api/bugs', async (req, res) => {
-  const { description, playerName } = req.body;
+  const { description, playerName, roomCode, url, userAgent } = req.body;
   if (!description || typeof description !== 'string' || !description.trim()) {
     return res.status(400).json({ error: 'Description is required' });
   }
@@ -78,10 +78,38 @@ app.post('/api/bugs', async (req, res) => {
     return res.status(500).json({ error: 'Bug reporting is not configured' });
   }
 
+  // Normalize optional context
   const trimmed = description.trim();
-  const reporter = playerName && typeof playerName === 'string' ? playerName.trim() : 'Anonymous';
+  const reporter = (typeof playerName === 'string' && playerName.trim()) ? playerName.trim() : 'Anonymous';
+  const code = (typeof roomCode === 'string' && roomCode.trim()) ? roomCode.trim().toUpperCase() : null;
+  const reportedUrl = (typeof url === 'string' && url.trim()) ? url.trim() : null;
+  const ua = (typeof userAgent === 'string' && userAgent.trim()) ? userAgent.trim() : null;
+
   const title = trimmed.length > 80 ? trimmed.slice(0, 77) + '...' : trimmed;
-  const body = `${trimmed}\n\nReported by: **${reporter}**\n\n---\n*Submitted via in-game bug report on ${new Date().toISOString()}*`;
+
+  // Assemble a rich issue body: description first, then a context table
+  // (player / room / URL / UA / timestamp) that's easy to skim.
+  const contextLines = [
+    `- **Reported by:** ${reporter}`,
+    `- **Room code:** ${code ? '`' + code + '`' : '_not in a game_'}`,
+    `- **URL:** ${reportedUrl || '_unknown_'}`,
+    `- **User agent:** ${ua ? '`' + ua + '`' : '_unknown_'}`,
+    `- **Submitted:** ${new Date().toISOString()}`,
+  ];
+  let body = `${trimmed}\n\n---\n\n### Context\n${contextLines.join('\n')}`;
+
+  // If we have a room code and a matching per-game log on disk, point the
+  // AI / reviewer at the /api/game-log endpoint so it can pull the session
+  // log for context. We don't embed the whole log in the issue body since
+  // it can be thousands of lines.
+  if (code) {
+    const logEntries = logger.readGameLog(code, 1);
+    if (logEntries.length > 0) {
+      body += `\n- **Game log:** available on the server at ` +
+              `\`server/logs/games/${code}.jsonl\` ` +
+              `(fetch via \`GET /api/game-log/${code}?logToken=...\`).`;
+    }
+  }
 
   try {
     const ghRes = await fetch('https://api.github.com/repos/RohanSamAgarwal/Plunder/issues', {
@@ -91,7 +119,11 @@ app.post('/api/bugs', async (req, res) => {
         'Accept': 'application/vnd.github+json',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ title, body, labels: ['bug', 'in-game bug report'] }),
+      body: JSON.stringify({
+        title,
+        body,
+        labels: ['bug', 'in-game bug report'],
+      }),
     });
 
     if (!ghRes.ok) {
@@ -101,8 +133,13 @@ app.post('/api/bugs', async (req, res) => {
     }
 
     const issue = await ghRes.json();
-    logger.info('bug_report_created', { issueNumber: issue.number, reporter });
-    res.json({ success: true });
+    logger.info('bug_report_created', { issueNumber: issue.number, reporter, code });
+    if (code) {
+      logger.gameLog(code, 'bug_report_created', {
+        issueNumber: issue.number, reporter, description: trimmed,
+      });
+    }
+    res.json({ success: true, issueNumber: issue.number });
   } catch (err) {
     logger.error('bug_report_failed', { message: err?.message, stack: err?.stack });
     res.status(500).json({ error: 'Failed to create bug report' });
