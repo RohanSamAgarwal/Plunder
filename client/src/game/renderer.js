@@ -506,8 +506,9 @@ function drawStaticLayer(ctx, canvas, gameState, layout) {
     if (island.type === 'obstacle') continue;
     if (!island.tiles || island.tiles.length === 0) continue;
     const expandedTiles = [...island.tiles];
-    if (island.port) {
-      expandedTiles.push({ col: island.port.col, row: island.port.row });
+    const allPorts = island.ports && island.ports.length ? island.ports : (island.port ? [island.port] : []);
+    for (const p of allPorts) {
+      expandedTiles.push({ col: p.col, row: p.row });
     }
     const outline = computeIslandOutline(expandedTiles, ts, id, gp);
     if (outline) _islandOutlines.set(id, outline);
@@ -556,8 +557,9 @@ function drawStaticLayer(ctx, canvas, gameState, layout) {
   // Carve harbor coves into port tiles (after organic islands are drawn)
   for (const [id, island] of Object.entries(islands)) {
     if (island.type === 'obstacle') continue;
-    if (island.port && island.port.openSides) {
-      drawHarborCove(ctx, island, ts, gp, board);
+    const allPorts = island.ports && island.ports.length ? island.ports : (island.port ? [island.port] : []);
+    for (const p of allPorts) {
+      if (p && p.openSides) drawHarborCove(ctx, island, ts, gp, board, p);
     }
   }
 
@@ -888,8 +890,8 @@ function drawBarrelIcon(ctx, cx, cy, size) {
 
 // ── Harbor Cove Rendering ─────────────────────────────────────
 
-function drawHarborCove(ctx, island, ts, gp, board) {
-  const port = island.port;
+function drawHarborCove(ctx, island, ts, gp, board, portOverride) {
+  const port = portOverride || island.port;
   if (!port || !port.openSides) return;
 
   const px = gp + port.col * ts;

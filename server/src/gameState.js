@@ -1760,7 +1760,8 @@ function arePlayersAdjacent(state, player1Id, player2Id) {
     }
     for (const islandId of p2.ownedIslands) {
       const island = state.islands[islandId];
-      if (island?.port && s1.position.col === island.port.col && s1.position.row === island.port.row) {
+      const islandPorts = island?.ports?.length ? island.ports : (island?.port ? [island.port] : []);
+      if (islandPorts.some(p => s1.position.col === p.col && s1.position.row === p.row)) {
         return true;
       }
     }
@@ -1769,7 +1770,8 @@ function arePlayersAdjacent(state, player1Id, player2Id) {
   for (const s2 of p2.ships) {
     for (const islandId of p1.ownedIslands) {
       const island = state.islands[islandId];
-      if (island?.port && s2.position.col === island.port.col && s2.position.row === island.port.row) {
+      const islandPorts = island?.ports?.length ? island.ports : (island?.port ? [island.port] : []);
+      if (islandPorts.some(p => s2.position.col === p.col && s2.position.row === p.row)) {
         return true;
       }
     }
@@ -1804,17 +1806,23 @@ export function canTrade(state, fromId, toId) {
   for (const s1 of from.ships) {
     for (const islandId of to.ownedIslands) {
       const island = state.islands[islandId];
-      if (island?.port && s1.position.col === island.port.col && s1.position.row === island.port.row) {
-        // Rulebook: storm-covered ports cannot be used for trade
-        if (!isInStorm(state, island.port)) return true;
+      const islandPorts = island?.ports?.length ? island.ports : (island?.port ? [island.port] : []);
+      for (const p of islandPorts) {
+        if (s1.position.col === p.col && s1.position.row === p.row) {
+          // Rulebook: storm-covered ports cannot be used for trade
+          if (!isInStorm(state, p)) return true;
+        }
       }
     }
   }
   for (const s2 of to.ships) {
     for (const islandId of from.ownedIslands) {
       const island = state.islands[islandId];
-      if (island?.port && s2.position.col === island.port.col && s2.position.row === island.port.row) {
-        if (!isInStorm(state, island.port)) return true;
+      const islandPorts = island?.ports?.length ? island.ports : (island?.port ? [island.port] : []);
+      for (const p of islandPorts) {
+        if (s2.position.col === p.col && s2.position.row === p.row) {
+          if (!isInStorm(state, p)) return true;
+        }
       }
     }
   }

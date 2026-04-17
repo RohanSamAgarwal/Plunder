@@ -84,7 +84,7 @@ function countIslandNeighbors(col, row, tileSet) {
 
 // ── Port Placement ─────────────────────────────────────────────
 
-function findPortPosition(islandTiles, gridWidth, gridHeight, occupiedSet) {
+function findPortCandidates(islandTiles, gridWidth, gridHeight, occupiedSet) {
   const islandSet = new Set(islandTiles.map(t => `${t.col},${t.row}`));
   const candidates = [];
 
@@ -113,8 +113,44 @@ function findPortPosition(islandTiles, gridWidth, gridHeight, occupiedSet) {
 
   if (candidates.length === 0) return null;
   candidates.sort((a, b) => b.openness - a.openness);
+  return candidates;
+}
+
+function findPortPosition(islandTiles, gridWidth, gridHeight, occupiedSet) {
+  const candidates = findPortCandidates(islandTiles, gridWidth, gridHeight, occupiedSet);
+  if (!candidates || candidates.length === 0) return null;
   const topN = Math.min(3, candidates.length);
   return candidates[Math.floor(Math.random() * topN)];
+}
+
+// Pick a second port on a different side of the island from the first port.
+// Uses Manhattan distance from the first port, preferring opposite-direction
+// candidates relative to the island's centroid.
+function findSecondPortPosition(islandTiles, gridWidth, gridHeight, occupiedSet, firstPort) {
+  const all = findPortCandidates(islandTiles, gridWidth, gridHeight, occupiedSet);
+  if (!all || all.length === 0) return null;
+
+  // Exclude the first port's tile and its immediate neighbors (same-side)
+  const firstKey = `${firstPort.col},${firstPort.row}`;
+  const blockedKeys = new Set([firstKey]);
+  for (const [dc, dr] of [[0,1],[0,-1],[1,0],[-1,0]]) {
+    blockedKeys.add(`${firstPort.col + dc},${firstPort.row + dr}`);
+  }
+  const filtered = all.filter(c => !blockedKeys.has(`${c.col},${c.row}`));
+  if (filtered.length === 0) return null;
+
+  // Score each candidate by Manhattan distance from first port (bigger = more opposite)
+  // and break ties by openness.
+  const scored = filtered.map(c => ({
+    ...c,
+    dist: Math.abs(c.col - firstPort.col) + Math.abs(c.row - firstPort.row),
+  }));
+  scored.sort((a, b) => {
+    if (b.dist !== a.dist) return b.dist - a.dist;
+    return b.openness - a.openness;
+  });
+  const topN = Math.min(2, scored.length);
+  return scored[Math.floor(Math.random() * topN)];
 }
 
 // ── Port Shape Assignment ─────────────────────────────────────
@@ -391,6 +427,7 @@ function generatePanel(panelId, config) {
         id: islandId, tiles: [...tiles], skulls: spec.skulls || 0,
         type: spec.merchant ? 'merchant' : spec.obstacle ? 'obstacle' : 'resource',
         port: null,
+        ports: [],
       };
 
       if (!spec.obstacle) {
@@ -403,7 +440,24 @@ function generatePanel(panelId, config) {
           col: port.col, row: port.row, portShape, openSides,
         };
         occupiedSet.add(`${port.col},${port.row}`);
-        island.port = { col: port.col, row: port.row, portShape, openSides };
+        const portEntry = { col: port.col, row: port.row, portShape, openSides };
+        island.port = portEntry;
+        island.ports.push(portEntry);
+
+        // Merchant islands get a second port on a different side (if possible)
+        if (spec.merchant) {
+          const port2 = findSecondPortPosition(tiles, PANEL_SIZE, PANEL_SIZE, occupiedSet, port);
+          if (port2) {
+            const port2Shape = assignPortShape(port2.islandNeighborCount);
+            const port2Sides = determinePortOpenSides(port2.col, port2.row, tiles, PANEL_SIZE, PANEL_SIZE, occupiedSet, port2Shape);
+            grid[port2.row][port2.col] = {
+              type: TILE_TYPES.PORT, portOf: islandId, isMerchant: true,
+              col: port2.col, row: port2.row, portShape: port2Shape, openSides: port2Sides,
+            };
+            occupiedSet.add(`${port2.col},${port2.row}`);
+            island.ports.push({ col: port2.col, row: port2.row, portShape: port2Shape, openSides: port2Sides });
+          }
+        }
       }
 
       islands.push(island);
@@ -788,14 +842,20 @@ export function generateBoard(playerCount = 4) {
     }
 
     // Build island registry — PASS 2: Assign ports (all islands now registered)
+    for (const island of Object.values(islandsMap)) {
+      island.ports = [];
+      island.port = null;
+    }
     for (let r = 0; r < totalRows; r++) {
       for (let c = 0; c < totalCols; c++) {
         const tile = board[r][c];
         if (tile.type === TILE_TYPES.PORT && tile.portOf && islandsMap[tile.portOf]) {
-          islandsMap[tile.portOf].port = {
+          const portEntry = {
             col: c, row: r,
             portShape: tile.portShape, openSides: tile.openSides,
           };
+          islandsMap[tile.portOf].ports.push(portEntry);
+          if (!islandsMap[tile.portOf].port) islandsMap[tile.portOf].port = portEntry;
         }
       }
     }
@@ -811,6 +871,7 @@ export function generateBoard(playerCount = 4) {
     for (const island of Object.values(islandsMap)) {
       island.tiles = [];
       island.port = null;
+      island.ports = [];
     }
     for (let r = 0; r < totalRows; r++) {
       for (let c = 0; c < totalCols; c++) {
@@ -820,10 +881,12 @@ export function generateBoard(playerCount = 4) {
           islandsMap[tile.islandId].tiles.push({ col: c, row: r });
         }
         if (tile.type === TILE_TYPES.PORT && tile.portOf && islandsMap[tile.portOf]) {
-          islandsMap[tile.portOf].port = {
+          const portEntry = {
             col: c, row: r,
             portShape: tile.portShape, openSides: tile.openSides,
           };
+          islandsMap[tile.portOf].ports.push(portEntry);
+          if (!islandsMap[tile.portOf].port) islandsMap[tile.portOf].port = portEntry;
         }
       }
     }
