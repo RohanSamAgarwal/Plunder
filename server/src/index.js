@@ -26,6 +26,7 @@ import {
 import {
   startTurnTimers, stopTurnTimers, handleSkipVote, onPlayerDisconnectDuringVote,
 } from './turnTimer.js';
+import { logger } from './logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -73,7 +74,7 @@ app.post('/api/bugs', async (req, res) => {
 
   const token = process.env.GITHUB_TOKEN;
   if (!token) {
-    console.error('GITHUB_TOKEN not set — cannot create issue');
+    logger.error('github_token_missing', { endpoint: '/api/bugs' });
     return res.status(500).json({ error: 'Bug reporting is not configured' });
   }
 
@@ -95,23 +96,50 @@ app.post('/api/bugs', async (req, res) => {
 
     if (!ghRes.ok) {
       const err = await ghRes.text();
-      console.error('GitHub API error:', ghRes.status, err);
+      logger.error('github_api_error', { status: ghRes.status, body: err });
       return res.status(500).json({ error: 'Failed to create bug report' });
     }
 
     const issue = await ghRes.json();
-    console.log(`Bug report created: issue #${issue.number}`);
+    logger.info('bug_report_created', { issueNumber: issue.number, reporter });
     res.json({ success: true });
   } catch (err) {
-    console.error('Failed to create GitHub issue:', err);
+    logger.error('bug_report_failed', { message: err?.message, stack: err?.stack });
     res.status(500).json({ error: 'Failed to create bug report' });
   }
+});
+
+// Admin: fetch the most recent log entries. Requires LOG_ACCESS_TOKEN env var
+// to be set on the server; caller provides it via `?token=` or Authorization
+// header. If LOG_ACCESS_TOKEN is unset, the endpoint returns 503 so it can't be
+// scraped from a misconfigured deploy.
+app.get('/api/logs/recent', (req, res) => {
+  const serverToken = process.env.LOG_ACCESS_TOKEN;
+  if (!serverToken) {
+    return res.status(503).json({ error: 'Log access not configured (set LOG_ACCESS_TOKEN)' });
+  }
+  const provided = req.query.token
+    || (req.headers.authorization?.startsWith('Bearer ')
+        ? req.headers.authorization.slice(7)
+        : null);
+  if (!provided || provided !== serverToken) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  const limit = Math.min(parseInt(req.query.limit, 10) || 500, 5000);
+  const level = req.query.level; // optional filter: 'info' | 'warn' | 'error'
+  let entries = logger.readRecent(limit);
+  if (level) entries = entries.filter(e => e.level === level);
+  res.json({ count: entries.length, entries });
 });
 
 // === SOCKET.IO HANDLERS ===
 
 io.on('connection', (socket) => {
-  console.log(`Player connected: ${socket.id}`);
+  logger.info('socket_connected', { socketId: socket.id });
+
+  socket.on('error', (err) => {
+    logger.error('socket_error', { socketId: socket.id, message: err?.message, stack: err?.stack });
+  });
 
   // --- LOBBY ---
 
@@ -125,7 +153,7 @@ io.on('connection', (socket) => {
       sessionToken: player.sessionToken,
       room: getPublicRoomState(room),
     });
-    console.log(`Room ${room.code} created by ${name}`);
+    logger.info('room_created', { code: room.code, hostName: name, socketId: socket.id });
   });
 
   socket.on(EVENTS.JOIN_ROOM, ({ code, name, sessionToken }, callback) => {
@@ -149,8 +177,14 @@ io.on('connection', (socket) => {
           playerId: result.player.id,
           name: result.player.name,
         });
+        logger.info('player_reconnected', {
+          code: room.code,
+          name: result.player.name,
+          playerId: result.player.id,
+        });
         return;
       }
+      logger.warn('reconnect_failed', { code, reason: 'invalid_session_or_room' });
     }
 
     const result = joinRoom(code, socket.id, name);
@@ -177,7 +211,7 @@ io.on('connection', (socket) => {
       room: getPublicRoomState(room),
     });
 
-    console.log(`${name} joined room ${room.code}`);
+    logger.info('player_joined', { code: room.code, name, reconnected: !!sessionToken });
   });
 
   socket.on(EVENTS.CHOOSE_COLOR, ({ color }, callback) => {
@@ -250,7 +284,7 @@ io.on('connection', (socket) => {
     }
 
     callback({ success: true });
-    console.log(`Game started in room ${room.code} with ${room.players.length} players`);
+    logger.info('game_started', { code: room.code, playerCount: room.players.length });
   });
 
   // --- GAMEPLAY ---
@@ -1038,9 +1072,15 @@ io.on('connection', (socket) => {
 
   // --- DISCONNECT ---
 
-  socket.on('disconnect', () => {
+  socket.on('disconnect', (reason) => {
     const found = getRoomBySocketId(socket.id);
+    let playerName = null;
+    let roomCode = null;
+    let gameInProgress = false;
     if (found) {
+      playerName = found.player?.name;
+      roomCode = found.room?.code;
+      gameInProgress = !!found.room?.gameState;
       const result = removePlayer(found.room.code, socket.id);
       if (result) {
         io.to(found.room.code).emit(EVENTS.PLAYER_LEFT, {
@@ -1057,7 +1097,13 @@ io.on('connection', (socket) => {
         }
       }
     }
-    console.log(`Player disconnected: ${socket.id}`);
+    logger.info('socket_disconnected', {
+      socketId: socket.id,
+      reason, // e.g. 'transport close', 'client namespace disconnect', 'ping timeout'
+      name: playerName,
+      code: roomCode,
+      gameInProgress,
+    });
   });
 });
 
@@ -1112,6 +1158,6 @@ async function ensureLabels() {
 
 const PORT = process.env.PORT || 3001;
 httpServer.listen(PORT, () => {
-  console.log(`Plunder server running on port ${PORT}`);
+  logger.info('server_started', { port: PORT, nodeEnv: process.env.NODE_ENV || 'development' });
   ensureLabels();
 });

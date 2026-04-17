@@ -19,6 +19,24 @@ export function useAnimSpeed() {
   return useContext(AnimSpeedContext);
 }
 
+function ReconnectToast({ reconnecting, connected, attempt }) {
+  // Hide while connected; show whenever we're disconnected or actively
+  // attempting to reconnect.
+  if (connected) return null;
+  return (
+    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[200]
+                    bg-pirate-brown border border-pirate-gold/60 shadow-lg shadow-black/50
+                    px-4 py-2 rounded-lg flex items-center gap-3">
+      <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+      <span className="text-sm text-pirate-tan">
+        {reconnecting
+          ? `Reconnecting to server… (attempt ${attempt})`
+          : 'Disconnected. Trying to reconnect…'}
+      </span>
+    </div>
+  );
+}
+
 export default function App() {
   const socketUtils = useSocket();
   const [playerInfo, setPlayerInfo] = useState(() => {
@@ -51,6 +69,11 @@ export default function App() {
               <Route path="/game/:code" element={<GamePage />} />
             </Routes>
             <BugReportButton />
+            <ReconnectToast
+              reconnecting={socketUtils.reconnecting}
+              connected={socketUtils.connected}
+              attempt={socketUtils.reconnectAttempt}
+            />
           </div>
         </AnimSpeedContext.Provider>
       </PlayerContext.Provider>

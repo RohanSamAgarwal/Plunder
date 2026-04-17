@@ -14,27 +14,39 @@ const SOCKET_PATH = import.meta.env.PROD
 export function useSocket() {
   const socketRef = useRef(null);
   const [connected, setConnected] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
 
   useEffect(() => {
     const socket = io(SOCKET_URL, {
       path: SOCKET_PATH,
       autoConnect: true,
       reconnection: true,
-      reconnectionAttempts: 10,
+      reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
     });
 
     socketRef.current = socket;
-    window.__socket = socket; // temp debug - remove before commit
 
     socket.on('connect', () => {
       setConnected(true);
+      setReconnecting(false);
+      setReconnectAttempt(0);
       console.log('Connected to server');
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', (reason) => {
       setConnected(false);
-      console.log('Disconnected from server');
+      console.log('Disconnected from server:', reason);
+    });
+
+    socket.io.on('reconnect_attempt', (attempt) => {
+      setReconnecting(true);
+      setReconnectAttempt(attempt);
+    });
+    socket.io.on('reconnect_failed', () => {
+      setReconnecting(false);
     });
 
     return () => {
@@ -59,5 +71,5 @@ export function useSocket() {
     socketRef.current?.off(event, handler);
   }, []);
 
-  return { socket: socketRef.current, connected, emit, on, off };
+  return { socket: socketRef.current, connected, reconnecting, reconnectAttempt, emit, on, off };
 }

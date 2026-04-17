@@ -7,6 +7,25 @@ const EVENTS = {
   JOIN_ROOM: 'join-room',
 };
 
+function loadSavedSession() {
+  for (const key of ['plunder-player', 'plunder_session']) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
+      if (parsed?.sessionToken && parsed?.roomCode && parsed?.name) return parsed;
+    } catch { /* ignore malformed */ }
+  }
+  return null;
+}
+
+function clearSavedSession() {
+  try {
+    localStorage.removeItem('plunder-player');
+    localStorage.removeItem('plunder_session');
+  } catch { /* ignore */ }
+}
+
 export default function Home() {
   const { emit, connected } = useSocketContext();
   const { setPlayerInfo } = usePlayerContext();
@@ -16,6 +35,7 @@ export default function Home() {
   const [joinCode, setJoinCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [savedSession, setSavedSession] = useState(() => loadSavedSession());
 
   async function handleCreate() {
     if (!name.trim()) return setError('Enter your pirate name!');
@@ -68,6 +88,19 @@ export default function Home() {
     navigate(`/game/${result.code}`);
   }
 
+  function handleRejoin() {
+    if (!savedSession) return;
+    // Make sure playerInfo reflects the saved session so GamePage's
+    // auto-reconnect sends the right sessionToken.
+    setPlayerInfo(savedSession);
+    navigate(`/game/${savedSession.roomCode}`);
+  }
+
+  function handleClearSaved() {
+    clearSavedSession();
+    setSavedSession(null);
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
       <div className="max-w-md w-full">
@@ -91,6 +124,32 @@ export default function Home() {
             {connected ? 'Connected to server' : 'Connecting...'}
           </span>
         </div>
+
+        {/* Rejoin banner — shown when a saved session is found */}
+        {savedSession && (
+          <div className="mb-5 bg-pirate-brown/80 border border-pirate-gold/50 rounded-lg p-4 shadow-lg shadow-black/40">
+            <p className="text-[11px] uppercase tracking-wider text-pirate-gold/80 mb-1">Previous game</p>
+            <p className="text-sm text-pirate-tan mb-3">
+              You were last playing as <strong className="text-white">{savedSession.name}</strong>{' '}
+              in <strong className="text-white font-mono">{savedSession.roomCode}</strong>.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={handleRejoin}
+                disabled={!connected || loading}
+                className="flex-1 bg-pirate-gold text-pirate-dark font-bold py-2 rounded
+                           hover:bg-yellow-500 transition disabled:opacity-40 disabled:cursor-not-allowed text-sm">
+                ⚓ Rejoin Game
+              </button>
+              <button
+                onClick={handleClearSaved}
+                className="bg-pirate-dark border border-pirate-tan/30 text-pirate-tan/70 px-3 py-2 rounded
+                           hover:border-red-500/50 hover:text-red-400 transition text-xs">
+                Forget
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Card */}
         <div className="bg-pirate-brown/60 border border-pirate-tan/20 rounded-lg p-6 space-y-6">

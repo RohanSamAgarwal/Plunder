@@ -2,6 +2,8 @@ node_modules/
 dist/
 .env
 *.log
+*.jsonl
+server/logs/
 .DS_Store
 .claude/
 test-*.cjs
