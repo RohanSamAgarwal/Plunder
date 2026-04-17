@@ -614,6 +614,24 @@ function drawStaticLayer(ctx, canvas, gameState, layout) {
     }
   }
 
+  // Island name labels — centered beneath each island
+  for (const [id, island] of Object.entries(islands)) {
+    if (island.type === 'obstacle' || !island.name) continue;
+    const outline = _islandOutlines.get(id);
+    if (!outline || !island.tiles || island.tiles.length === 0) continue;
+
+    // Label below the island's bounding box
+    let minR = Infinity, maxR = -Infinity, minC = Infinity, maxC = Infinity;
+    minC = Math.min(...island.tiles.map(t => t.col));
+    maxC = Math.max(...island.tiles.map(t => t.col));
+    minR = Math.min(...island.tiles.map(t => t.row));
+    maxR = Math.max(...island.tiles.map(t => t.row));
+    const labelCX = gp + ((minC + maxC + 1) / 2) * ts;
+    const labelCY = gp + (maxR + 1) * ts + ts * 0.18;
+
+    drawIslandNameLabel(ctx, labelCX, labelCY, island.name, ts);
+  }
+
   // Compass rose
   drawCompassRose(ctx, canvas.width - gp + 2, canvas.height - gp + 2, gp * 0.7);
 
@@ -1442,6 +1460,49 @@ function drawLandBarrier(ctx, x, y, ts) {
 }
 
 // ── Decorations ────────────────────────────────────────────────
+
+function drawIslandNameLabel(ctx, cx, cy, name, ts) {
+  if (!name) return;
+  const fontSize = Math.max(10, Math.round(ts * 0.18));
+  ctx.save();
+  ctx.font = `bold ${fontSize}px "Pirata One", Georgia, serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+
+  // Dark pill background for readability
+  const text = name;
+  const metrics = ctx.measureText(text);
+  const padX = fontSize * 0.5;
+  const padY = fontSize * 0.25;
+  const w = metrics.width + padX * 2;
+  const h = fontSize + padY * 2;
+
+  ctx.fillStyle = 'rgba(16, 24, 36, 0.72)';
+  ctx.strokeStyle = 'rgba(212, 160, 23, 0.45)';
+  ctx.lineWidth = 1;
+  const bx = cx - w / 2;
+  const by = cy;
+  const r = Math.min(h / 2, 8);
+  ctx.beginPath();
+  ctx.moveTo(bx + r, by);
+  ctx.lineTo(bx + w - r, by);
+  ctx.quadraticCurveTo(bx + w, by, bx + w, by + r);
+  ctx.lineTo(bx + w, by + h - r);
+  ctx.quadraticCurveTo(bx + w, by + h, bx + w - r, by + h);
+  ctx.lineTo(bx + r, by + h);
+  ctx.quadraticCurveTo(bx, by + h, bx, by + h - r);
+  ctx.lineTo(bx, by + r);
+  ctx.quadraticCurveTo(bx, by, bx + r, by);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = '#f5e8b8';
+  ctx.shadowColor = 'rgba(0,0,0,0.7)';
+  ctx.shadowBlur = 2;
+  ctx.fillText(text, cx, cy + padY);
+  ctx.restore();
+}
 
 function drawSkullBadge(ctx, tileCX, tileCY, skulls, ts, ownerColor) {
   // All skulls must fit within one tile, centered horizontally and vertically

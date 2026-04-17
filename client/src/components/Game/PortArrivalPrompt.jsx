@@ -26,22 +26,24 @@ export default function PortArrivalPrompt({
   const unowned = !isMerchant && island && !ownerId;
 
   // Heading text
+  const islandName = island?.name;
   let headline;
   let subtitle;
   if (isMerchant) {
-    headline = 'Merchant Port';
+    headline = islandName ? `${islandName} (Merchant)` : 'Merchant Port';
     subtitle = 'Trade resources at the bank (2 → 1) or with any other player.';
   } else if (ownedByMe) {
-    headline = 'Your Island';
+    headline = islandName ? `${islandName} (Yours)` : 'Your Island';
     subtitle = 'Trade with other docked players or build from your stockpile.';
   } else if (ownedByOther) {
-    headline = `${owner?.name ?? 'Enemy'}'s Island`;
-    subtitle = `${island.skulls}-skull defense. Attack to conquer, or trade with ${owner?.name ?? 'the owner'}.`;
+    const ownerLabel = owner?.name ?? 'Enemy';
+    headline = islandName ? `${islandName} — ${ownerLabel}'s` : `${ownerLabel}'s Island`;
+    subtitle = `${island.skulls}-skull defense. Attack to conquer, or trade with ${ownerLabel}.`;
   } else if (unowned) {
-    headline = 'Unclaimed Island';
+    headline = islandName ? `${islandName} (Unclaimed)` : 'Unclaimed Island';
     subtitle = `${island.skulls}-skull defense. Attack to claim it as your own.`;
   } else {
-    headline = 'Docked';
+    headline = islandName || 'Docked';
     subtitle = 'Actions available in the panel.';
   }
 

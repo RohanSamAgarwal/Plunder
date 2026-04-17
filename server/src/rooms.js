@@ -1,6 +1,6 @@
 // Room Manager for Plunder: A Pirate's Life
 import { v4 as uuid } from 'uuid';
-import { PLAYER_COLORS, SHIPLESS_MODES, BRIBE_MODES, TRADE_KNOWLEDGE, REROLL_MODES } from '../../shared/constants.js';
+import { PLAYER_COLORS, SHIPLESS_MODES, BRIBE_MODES, TRADE_KNOWLEDGE, REROLL_MODES, ISLAND_NAME_STYLES } from '../../shared/constants.js';
 
 const rooms = new Map();
 
@@ -55,6 +55,7 @@ export function createRoom(hostSocketId, hostName) {
       lightenTheLoad: true,
       softTimerSeconds: 60,
       hardTimerSeconds: 300,
+      islandNameStyle: ISLAND_NAME_STYLES.CLASSIC,
     },
   };
 
@@ -192,6 +193,9 @@ export function updateSettings(code, playerId, settings) {
   if (room.settings.softTimerSeconds > 0 && room.settings.hardTimerSeconds > 0 &&
       room.settings.softTimerSeconds >= room.settings.hardTimerSeconds) {
     room.settings.softTimerSeconds = room.settings.hardTimerSeconds - 1;
+  }
+  if (settings.islandNameStyle && Object.values(ISLAND_NAME_STYLES).includes(settings.islandNameStyle)) {
+    room.settings.islandNameStyle = settings.islandNameStyle;
   }
 
   return { success: true, settings: room.settings };

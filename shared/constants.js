@@ -80,6 +80,14 @@ export const REROLL_MODES = {
   SPEND_RESOURCES: 'spend_resources', // Spend any 3 resources to reroll one die
 };
 
+// Island name flavor (configurable in lobby)
+export const ISLAND_NAME_STYLES = {
+  CLASSIC: 'classic',   // Skull Cove, Dead Man's Reef (default)
+  SILLY:   'silly',     // Rotten Keg Reef, Stubby's Folly
+  DIRTY:   'dirty',     // 18+ / NSFW bawdy humor
+  MIXED:   'mixed',     // all three pools combined
+};
+
 export const EVENTS = {
   // Lobby
   CREATE_ROOM: 'create-room',

@@ -4,13 +4,15 @@ import {
   GAME_PHASES, TURN_PHASES, INITIAL_LIFE_PEGS, WIN_POINTS,
   STORM_SIZE, BUILD_COSTS, RESOURCE_TYPES, TILE_TYPES, SHIPLESS_MODES,
   MAX_CANNONS, MAX_MASTS, MAX_LIFE_PEGS, BRIBE_MODES, TRADE_KNOWLEDGE,
-  REROLL_MODES,
+  REROLL_MODES, ISLAND_NAME_STYLES,
 } from '../../shared/constants.js';
 import { generateBoard, getStartingIslands } from './board.js';
 import { createResourceDeck, createTreasureDeck, drawFromDeck, shuffle } from './decks.js';
+import { assignIslandNames } from './islandNames.js';
 
 export function createGameState(players, playerCount, settings = {}) {
   const boardData = generateBoard(playerCount);
+  assignIslandNames(boardData.islands, settings.islandNameStyle || ISLAND_NAME_STYLES.CLASSIC);
 
   const state = {
     phase: GAME_PHASES.STARTING_ISLAND_PICK,
@@ -65,6 +67,7 @@ export function createGameState(players, playerCount, settings = {}) {
       lightenTheLoad: settings.lightenTheLoad !== undefined ? settings.lightenTheLoad : true,
       softTimerSeconds: settings.softTimerSeconds ?? 60,
       hardTimerSeconds: settings.hardTimerSeconds ?? 300,
+      islandNameStyle: settings.islandNameStyle || ISLAND_NAME_STYLES.CLASSIC,
     },
   };
 

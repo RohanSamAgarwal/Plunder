@@ -178,7 +178,8 @@ export default function GamePage() {
       on(EVENTS.COMBAT_RESULT, (result) => {
         if (result.type === 'island') {
           const won = result.won;
-          addSystemMessage(`${result.attacker} ${won ? 'conquered' : 'failed to take'} an island! (${result.attackRoll} vs ${result.defenseRoll})`);
+          const target = result.islandName ? `**${result.islandName}**` : 'an island';
+          addSystemMessage(`${result.attacker} ${won ? 'conquered' : 'failed to take'} ${target}! (${result.attackRoll} vs ${result.defenseRoll})`);
         } else {
           const won = result.attackerWon;
           addSystemMessage(`Ship combat! ${result.attacker} ${won ? 'won' : 'lost'}! (${result.attackRoll} vs ${result.defenseRoll})`);

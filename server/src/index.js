@@ -442,6 +442,7 @@ io.on('connection', (socket) => {
         type: 'island',
         attacker: found.player.name,
         defender: island?.owner ? state.players[island.owner]?.name || 'Island' : 'Island',
+        islandName: island?.name || null,
         location: island?.port || null,
         attackerLocation: attackerShipForIsland?.position || null,
         defenderLocation: island?.port || null,
@@ -611,9 +612,11 @@ io.on('connection', (socket) => {
     if (result.resolved && result.combat) {
       const attackerName = state.players[pending.attackerId]?.name || found.player.name;
       let defender;
+      let islandName = null;
       if (pending.type === 'island') {
         const island = state.islands[pending.targetId];
         defender = island?.owner ? state.players[island.owner]?.name || 'Island' : 'Island';
+        islandName = island?.name || null;
       } else {
         defender = state.players[pending.defenderId]?.name || 'Ship';
       }
@@ -621,6 +624,7 @@ io.on('connection', (socket) => {
         type: result.combatType || 'ship',
         attacker: attackerName,
         defender,
+        islandName,
         ...result.combat,
       });
     }
@@ -642,9 +646,11 @@ io.on('connection', (socket) => {
     if (result.resolved && result.combat) {
       const attackerName = state.players[pending.attackerId]?.name || found.player.name;
       let defender;
+      let islandName = null;
       if (pending.type === 'island') {
         const island = state.islands[pending.targetId];
         defender = island?.owner ? state.players[island.owner]?.name || 'Island' : 'Island';
+        islandName = island?.name || null;
       } else {
         defender = state.players[pending.defenderId]?.name || 'Ship';
       }
@@ -652,6 +658,7 @@ io.on('connection', (socket) => {
         type: result.combatType || 'ship',
         attacker: attackerName,
         defender,
+        islandName,
         ...result.combat,
       });
     }
