@@ -29,6 +29,7 @@ const EVENTS = {
   ATTACK_BRIBE_DECISION: 'attack-bribe-decision',
   ATTACK_BRIBE_RESOLVED: 'attack-bribe-resolved',
   SHIP_MOVED: 'ship-moved',
+  MOVE_UNDONE: 'move-undone',
   STORM_SPAWNED: 'storm-spawned',
   RESOURCES_DRAWN: 'resources-drawn',
 };
@@ -268,6 +269,9 @@ export default function GamePage() {
           const pathLen = path?.length || 0;
           setTimeout(() => setEventAnim({ icon: '⚓', title: 'Port Arrival', subtitle: `${playerName} docked at port`, color: '#60a5fa' }), pathLen * 180 + 300);
         }
+      }),
+      on(EVENTS.MOVE_UNDONE, ({ playerName }) => {
+        addSystemMessage(`${playerName} undid their last move.`);
       }),
       on(EVENTS.STORM_SPAWNED, ({ center }) => {
         addSystemMessage('⚡ The storm has moved!');

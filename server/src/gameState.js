@@ -56,6 +56,7 @@ export function createGameState(players, playerCount, settings = {}) {
     attackedThisTurn: {}, // { [shipId]: Set([targetId1, targetId2]) } — prevents same ship attacking same target twice per turn
     turnNumber: 0,
     turnStartedAt: null,
+    undoableMove: null, // snapshot of the most recent move, cleared by any non-move action
 
     // Game settings (configurable in lobby)
     settings: {
@@ -732,6 +733,9 @@ export function moveShip(state, playerId, shipId, path) {
 
   // Save original position before applying movement (for storm cancel)
   const originalPosition = { ...ship.position };
+  const originalMovesUsed = ship.movesUsed;
+  const originalJettisonBonus = ship.jettisonBonus || 0;
+  const originalMovePointsRemaining = state.movePointsRemaining;
 
   // Apply movement — consume from global pool first, then jettison bonus
   ship.position = current;
@@ -751,6 +755,26 @@ export function moveShip(state, playerId, shipId, path) {
     };
   }
 
+  // Save an undo snapshot so the player can rewind this move as long as they
+  // haven't taken another action. A pending storm cost disables undo — the
+  // storm cost must be paid or cancelled first. Treasures on path don't
+  // invalidate because they're not auto-collected; collecting one DOES clear
+  // this snapshot (see collectTreasure).
+  if (stormCost === 0) {
+    state.undoableMove = {
+      playerId,
+      shipId,
+      originalPosition,
+      originalMovesUsed,
+      originalJettisonBonus,
+      originalMovePointsRemaining,
+      newPosition: { ...current },
+    };
+  } else {
+    // Storm cost complicates undo; keep it simple by disabling until paid
+    state.undoableMove = null;
+  }
+
   // Check for treasure tokens along the path (player can choose to pick up)
   // Rulebook: multiple Xs can occupy the same space — find ALL tokens at each step
   const treasuresOnPath = [];
@@ -764,6 +788,44 @@ export function moveShip(state, playerId, shipId, path) {
   }
 
   return { success: true, newPosition: current, stormCost, treasuresOnPath };
+}
+
+// Undo the most recent ship movement. Only valid if:
+//   - there's an undo snapshot stored (state.undoableMove)
+//   - it belongs to the current player
+//   - no invalidating action has happened since (treasure collect, build,
+//     attack, trade, treaty, end turn all clear the snapshot)
+export function undoMove(state, playerId) {
+  const undo = state.undoableMove;
+  if (!undo) return { error: 'Nothing to undo' };
+  if (undo.playerId !== playerId) return { error: 'Not your move to undo' };
+  if (state.pendingStormCost) return { error: 'Resolve the storm cost first' };
+  if (state.pendingAttack) return { error: 'Resolve the pending attack first' };
+  if (state.pendingCombatReroll) return { error: 'Resolve the combat reroll first' };
+
+  const player = state.players[playerId];
+  const ship = player?.ships?.find(s => s.id === undo.shipId);
+  if (!ship) return { error: 'Ship no longer exists' };
+
+  // Restore pre-move state
+  ship.position = { ...undo.originalPosition };
+  ship.movesUsed = undo.originalMovesUsed;
+  ship.jettisonBonus = undo.originalJettisonBonus;
+  state.movePointsRemaining = undo.originalMovePointsRemaining;
+  state.undoableMove = null;
+
+  return {
+    success: true,
+    shipId: undo.shipId,
+    restoredPosition: { ...ship.position },
+    newMovePointsRemaining: state.movePointsRemaining,
+  };
+}
+
+// Call this in every gameState mutation that represents "another action" so
+// the previous move's undo becomes unavailable.
+export function clearUndoableMove(state) {
+  state.undoableMove = null;
 }
 
 // Lightening the Load: jettison cannons for bonus movement
@@ -786,6 +848,7 @@ export function jettisonCannons(state, playerId, shipId, count) {
 
   ship.cannons -= count;
   ship.jettisonBonus = count === 1 ? 1 : 3;
+  state.undoableMove = null;
 
   return { success: true, bonusMoves: ship.jettisonBonus, cannonsRemaining: ship.cannons };
 }
@@ -830,6 +893,8 @@ export function collectTreasure(state, playerId, tokenId) {
       return { error: 'Cannot collect treasure across the storm border' };
     }
   }
+
+  state.undoableMove = null;
 
   // Rulebook: after collecting, relocate the X token to new random sea tile (not remove it)
   relocateTreasureToken(state, tokenIndex);
@@ -1115,6 +1180,7 @@ export function buildItem(state, playerId, buildType, targetShipId) {
   for (const [resource, amount] of Object.entries(cost)) {
     player.resources[resource] -= amount;
   }
+  state.undoableMove = null;
 
   if (buildType === 'ship') {
     if (player.ships.length >= 3) {
@@ -1604,6 +1670,7 @@ function finishCombatReroll(state) {
 export function attackIsland(state, playerId, shipId, islandId) {
   const v = validateIslandAttack(state, playerId, shipId, islandId);
   if (v.error) return v;
+  state.undoableMove = null;
 
   // Unowned islands or bribe mode off: instant combat
   if (!v.island.owner || state.settings.bribeMode === BRIBE_MODES.NONE) {
@@ -1625,6 +1692,7 @@ export function attackIsland(state, playerId, shipId, islandId) {
 export function attackShip(state, attackerId, attackerShipId, defenderShipId) {
   const v = validateShipAttack(state, attackerId, attackerShipId, defenderShipId);
   if (v.error) return v;
+  state.undoableMove = null;
 
   // Bribe mode off: instant combat
   if (state.settings.bribeMode === BRIBE_MODES.NONE) {
@@ -1744,6 +1812,7 @@ export function proposeTreaty(state, proposerId, targetId, offer) {
     return { error: 'Already have a treaty this turn' };
   }
 
+  state.undoableMove = null;
   return { success: true, treaty: { proposerId, targetId, offer } };
 }
 
@@ -1900,6 +1969,8 @@ export function merchantBankTrade(state, playerId, give, receive) {
     return { error: 'Bank is out of that resource' };
   }
 
+  state.undoableMove = null;
+
   for (const [res, amt] of Object.entries(give)) {
     player.resources[res] -= amt;
     state.resourceBank[res] = (state.resourceBank[res] || 0) + amt;
@@ -1928,6 +1999,7 @@ function _advanceTurn(state) {
   state.pendingStormCost = null;
   state.attackedThisTurn = {};
   state.turnStartedAt = null;
+  state.undoableMove = null;
   // Rulebook: clear shipless recovery block — flag only lasts the turn it was set
   for (const p of Object.values(state.players)) {
     delete p.shiplessRecoveryBlocked;
@@ -2056,6 +2128,11 @@ export function getPublicGameState(state, forPlayerId) {
     tradeEligible,
     treaties: state.treaties.filter(t => t.turnNumber === state.turnNumber),
     turnStartedAt: state.turnStartedAt,
+    undoableMove: state.undoableMove ? {
+      playerId: state.undoableMove.playerId,
+      shipId: state.undoableMove.shipId,
+      originalPosition: state.undoableMove.originalPosition,
+    } : null,
     settings: state.settings,
     atMerchant: forPlayerId ? isPlayerAtMerchant(state, forPlayerId) : false,
     hasRerolledSailing: state.hasRerolledSailing || false,

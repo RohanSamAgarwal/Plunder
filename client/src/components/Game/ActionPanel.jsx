@@ -625,6 +625,20 @@ export default function ActionPanel({
                 {selectedShip && ' \u2022 Ship selected \u2014 click to move'}
               </div>
 
+              {/* Undo move — only while the most recent move is still reversible */}
+              {gameState.undoableMove && gameState.undoableMove.playerId === myPlayer.id && (
+                <button
+                  onClick={async () => {
+                    const res = await emit('undo-move');
+                    if (res?.error) alert(res.error);
+                  }}
+                  className="w-full bg-pirate-brown border border-amber-500/50 text-amber-300
+                             hover:bg-amber-700/20 hover:text-amber-200 py-1.5 rounded text-xs
+                             transition flex items-center justify-center gap-1.5">
+                  ↶ Undo last move
+                </button>
+              )}
+
               {/* Sailing Die Reroll */}
               {!hasRerolledSailing && rerollMode !== 'none' && canPlayerReroll() && (
                 <div className="space-y-1.5">

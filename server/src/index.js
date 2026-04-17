@@ -14,7 +14,7 @@ import {
 import {
   createGameState, getPublicGameState, pickStartingIsland,
   getAvailableStartingIslands, drawResources, rollSailingDie,
-  moveShip, buildItem, attackIsland, attackShip, endTurn, calculatePlunderPoints,
+  moveShip, undoMove, buildItem, attackIsland, attackShip, endTurn, calculatePlunderPoints,
   collectTreasure, resolveTreasureSteal, resolveTreasureStormDiscard, resolveTreasureFreeUpgrade, resolveStormCost, cancelStormMove,
   merchantBankTrade, canTrade, proposeTreaty, resolveTreaty,
   shiplessRoll, shiplessExchangePP, shiplessExchangeGold,
@@ -466,6 +466,33 @@ io.on('connection', (socket) => {
         arrivedAtPort,
       });
     }
+  });
+
+  socket.on(EVENTS.UNDO_MOVE, (_, callback) => {
+    const found = getRoomBySocketId(socket.id);
+    if (!found || !found.room.gameState) return callback?.({ error: 'No game' });
+
+    const state = found.room.gameState;
+    if (state.turnOrder[state.currentPlayerIndex] !== found.player.id) {
+      return callback?.({ error: 'Not your turn' });
+    }
+
+    const result = undoMove(state, found.player.id);
+    if (result.error) return callback?.(result);
+
+    broadcastGameState(found.room);
+    callback?.(result);
+    io.to(found.room.code).emit(EVENTS.MOVE_UNDONE, {
+      playerId: found.player.id,
+      playerName: found.player.name,
+      shipId: result.shipId,
+      restoredPosition: result.restoredPosition,
+    });
+    logger.gameLog(found.room.code, 'move_undone', {
+      playerName: found.player.name,
+      shipId: result.shipId,
+      restoredPosition: result.restoredPosition,
+    });
   });
 
   // Lightening the Load: jettison cannons for bonus movement
@@ -948,6 +975,7 @@ io.on('connection', (socket) => {
       offer,
       request,
     };
+    state.undoableMove = null;
 
     const targetPlayer = found.room.players.find(p => p.id === toPlayerId);
     if (targetPlayer) {

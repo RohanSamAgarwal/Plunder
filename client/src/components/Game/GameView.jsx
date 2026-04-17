@@ -69,6 +69,24 @@ export default function GameView({ gameState, playerInfo, messages, pendingTrade
     if (!pendingAttackBribe) setBribeSubmitted(false);
   }, [pendingAttackBribe]);
 
+  // Keep selectedShip in sync with the latest gameState (positions, masts,
+  // etc.) — otherwise an undo/move leaves selectedShip pointing at a stale
+  // snapshot and getValidMoves() computes from the wrong position.
+  useEffect(() => {
+    if (!selectedShip || !gameState) return;
+    const myId = playerInfo?.playerId;
+    const fresh = gameState.players?.[myId]?.ships?.find(s => s.id === selectedShip.id);
+    if (!fresh) { setSelectedShip(null); return; }
+    if (fresh.position.col !== selectedShip.position.col ||
+        fresh.position.row !== selectedShip.position.row ||
+        fresh.cannons !== selectedShip.cannons ||
+        fresh.masts !== selectedShip.masts ||
+        fresh.lifePegs !== selectedShip.lifePegs ||
+        (fresh.jettisonBonus || 0) !== (selectedShip.jettisonBonus || 0)) {
+      setSelectedShip(fresh);
+    }
+  }, [gameState, selectedShip, playerInfo?.playerId]);
+
   // Clear port arrival prompt when the user deselects or selects a different ship
   useEffect(() => {
     if (!selectedShip || selectedShip.id !== portArrivalShipId) {

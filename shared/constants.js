@@ -117,6 +117,8 @@ export const EVENTS = {
   DIE_ROLLED: 'die-rolled',
   MOVE_SHIP: 'move-ship',
   SHIP_MOVED: 'ship-moved',
+  UNDO_MOVE: 'undo-move',
+  MOVE_UNDONE: 'move-undone',
   BUILD: 'build',
   BUILT: 'built',
   ATTACK_ISLAND: 'attack-island',
